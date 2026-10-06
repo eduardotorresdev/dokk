@@ -72,8 +72,10 @@ else
 fi
 [ "$EXPECTED" = "$ACTUAL" ] || die "checksum mismatch for $FILE"
 
-tar -xzf "$TMP/$FILE" -C "$TMP" dokk
-install -m 0755 "$TMP/dokk" "$BIN.new"
+mkdir "$TMP/x"
+tar -xzf "$TMP/$FILE" -C "$TMP/x"
+[ -f "$TMP/x/dokk" ] || die "dokk binary not found in $FILE"
+install -m 0755 "$TMP/x/dokk" "$BIN.new"
 mv "$BIN.new" "$BIN"
 say "Installed $("$BIN" -version) to $BIN"
 
