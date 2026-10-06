@@ -910,7 +910,8 @@
     const reveal = async (el) => {
         const r = el.getBoundingClientRect()
         if (r.top < 70 || r.bottom > innerHeight - 20) {
-            el.scrollIntoView({ block: "center", behavior: "smooth" })
+            // scrollIntoView rolaria também a página que embute o iframe.
+            scrollBy({ top: r.top + r.height / 2 - innerHeight / 2, behavior: "smooth" })
             await sleep(650)
         }
     }
@@ -1006,3 +1007,15 @@
     }
     addEventListener("DOMContentLoaded", loop)
 })()
+
+// Dentro do iframe da landing, foco e scrollIntoView não podem rolar a
+// página de fora: o foco nunca rola e o scrollIntoView só rola o documento
+// do próprio demo.
+{
+    const focus = HTMLElement.prototype.focus
+    HTMLElement.prototype.focus = function (opts) { return focus.call(this, { ...opts, preventScroll: true }) }
+    Element.prototype.scrollIntoView = function () {
+        const r = this.getBoundingClientRect()
+        if (r.top < 0 || r.bottom > innerHeight) scrollBy({ top: r.top + r.height / 2 - innerHeight / 2 })
+    }
+}
