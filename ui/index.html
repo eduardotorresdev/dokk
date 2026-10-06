@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>dokk</title>
+    <meta name="description" content="dokk: painel para gerenciar apps no Dokku.">
+    <meta name="application-name" content="dokk">
+    <meta name="apple-mobile-web-app-title" content="dokk">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f3f1ec" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0c0c0e" media="(prefers-color-scheme: dark)">
+    <!-- Painel privado: fora de buscadores e sem vazar a URL em links externos. -->
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <meta name="format-detection" content="telephone=no">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="dokk">
+    <meta property="og:title" content="dokk">
+    <meta property="og:description" content="Painel para gerenciar apps no Dokku.">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="/assets/favicon-32.png" type="image/png" sizes="32x32">
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="/assets/manifest.webmanifest">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="/src/style.css">
+    <!-- Busca tudo em paralelo em vez de descobrir os imports um a um. -->
+    <link rel="preload" href="/api/apps" as="fetch" crossorigin="anonymous">
+    <link rel="modulepreload" href="/src/main.js">
+    <link rel="modulepreload" href="/src/shared.js">
+    <link rel="modulepreload" href="/src/i18n.js">
+    <link rel="modulepreload" href="/src/locales/en/common.js">
+    <link rel="modulepreload" href="/src/locales/en/onboarding.js">
+    <link rel="modulepreload" href="/src/locales/en/home.js">
+    <link rel="modulepreload" href="/src/locales/en/app.js">
+    <link rel="modulepreload" href="/src/locales/en/registries.js">
+    <link rel="modulepreload" href="/src/locales/en/auth.js">
+    <link rel="modulepreload" href="/src/locales/en/errors.js">
+    <link rel="modulepreload" href="/src/locales/es/common.js">
+    <link rel="modulepreload" href="/src/locales/es/onboarding.js">
+    <link rel="modulepreload" href="/src/locales/es/home.js">
+    <link rel="modulepreload" href="/src/locales/es/app.js">
+    <link rel="modulepreload" href="/src/locales/es/registries.js">
+    <link rel="modulepreload" href="/src/locales/es/auth.js">
+    <link rel="modulepreload" href="/src/locales/es/errors.js">
+    <link rel="modulepreload" href="/src/locales/pt-BR/common.js">
+    <link rel="modulepreload" href="/src/locales/pt-BR/onboarding.js">
+    <link rel="modulepreload" href="/src/locales/pt-BR/home.js">
+    <link rel="modulepreload" href="/src/locales/pt-BR/app.js">
+    <link rel="modulepreload" href="/src/locales/pt-BR/registries.js">
+    <link rel="modulepreload" href="/src/locales/pt-BR/auth.js">
+    <link rel="modulepreload" href="/src/locales/pt-BR/errors.js">
+    <link rel="modulepreload" href="/src/pages/home.js">
+    <link rel="modulepreload" href="/src/pages/app.js">
+    <link rel="modulepreload" href="/src/pages/onboarding.js">
+    <link rel="modulepreload" href="/src/pages/registries.js">
+    <link rel="modulepreload" href="/src/pages/not-found.js">
+    <link rel="modulepreload" href="/src/pages/login.js">
+    <link rel="modulepreload" href="/node_modules/shablon/index.js">
+    <link rel="modulepreload" href="/node_modules/shablon/src/state.js">
+    <link rel="modulepreload" href="/node_modules/shablon/src/template.js">
+    <link rel="modulepreload" href="/node_modules/shablon/src/router.js">
+    <script type="importmap">
+        { "imports": { "shablon": "/node_modules/shablon/index.js" } }
+    </script>
+</head>
+<body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

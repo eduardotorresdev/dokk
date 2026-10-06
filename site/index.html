@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>dokk — a web panel for Dokku, in one binary</title>
+<meta name="description" content="dokk is a single Go binary that turns a fresh Ubuntu or Debian server into a Dokku PaaS with a web panel: install Dokku, deploy Docker images, watch logs and metrics.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f3f1ec" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0c0e" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://eduardotorresdev.github.io/dokk/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="dokk">
+<meta property="og:url" content="https://eduardotorresdev.github.io/dokk/">
+<meta property="og:title" content="dokk — a web panel for Dokku, in one binary">
+<meta property="og:description" content="One binary turns a fresh server into a Dokku PaaS with a web panel. Install Dokku, deploy Docker images, watch logs and metrics.">
+<meta property="og:image" content="https://eduardotorresdev.github.io/dokk/assets/icon-512.png">
+<meta property="og:image:width" content="512">
+<meta property="og:image:height" content="512">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="dokk — a web panel for Dokku, in one binary">
+<meta name="twitter:description" content="One binary turns a fresh server into a Dokku PaaS with a web panel.">
+<meta name="twitter:image" content="https://eduardotorresdev.github.io/dokk/assets/icon-512.png">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+:root {
+  --bg: #f3f1ec;
+  --surface: #e9e6df;
+  --card: #fdfcf9;
+  --fg: #1a1917;
+  --muted: #77726a;
+  --border: #e0dcd3;
+  --accent: #2f6bff;
+  --accent-ink: #1f4fe0;
+  --accent-soft: #e4ecff;
+  --ok: #2f6bff;
+  --warn: #e59a0b;
+  --bad: #e5484d;
+  --code-bg: #1a1917;
+  --code-fg: #f1f0ed;
+  --radius: 10px;
+  --radius-lg: 18px;
+  --shadow: 0 1px 2px rgb(40 30 10 / .05), 0 6px 20px -8px rgb(40 30 10 / .12);
+  --shadow-lg: 0 2px 4px rgb(40 30 10 / .06), 0 30px 60px -24px rgb(40 30 10 / .35);
+  --font: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c0c0e;
+    --surface: #17171a;
+    --card: #121215;
+    --fg: #f1f0ed;
+    --muted: #8d8a85;
+    --border: #24242a;
+    --accent: #4d84ff;
+    --accent-ink: #8db0ff;
+    --accent-soft: #13254d;
+    --ok: #4d84ff;
+    --warn: #f5b13d;
+    --bad: #ff5c61;
+    --code-bg: #121215;
+    --code-fg: #f1f0ed;
+    --shadow: 0 1px 0 rgb(255 255 255 / .03) inset, 0 6px 24px -10px rgb(0 0 0 / .6);
+    --shadow-lg: 0 1px 0 rgb(255 255 255 / .05) inset, 0 30px 70px -24px rgb(0 0 0 / .9);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c0c0e; --surface: #17171a; --card: #121215; --fg: #f1f0ed; --muted: #8d8a85;
+  --border: #24242a; --accent: #4d84ff; --accent-ink: #8db0ff; --accent-soft: #13254d;
+  --ok: #4d84ff; --warn: #f5b13d; --bad: #ff5c61; --code-bg: #121215; --code-fg: #f1f0ed;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; overflow-x: hidden; }
+.install, .step, .steps, .features, .mock-grid, .req-grid, .credits, .mock-stats { min-width: 0; }
+.install > *, .steps > *, .req-grid > *, .mock-grid > *, .credits > *, .mock-stats > * { min-width: 0; }
+.install { max-width: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  background: var(--bg);
+  color: var(--fg);
+  overflow-x: hidden;
+}
+a { color: inherit; text-decoration: none; }
+p a, li a, dd a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+p a:hover, li a:hover, dd a:hover { text-decoration-color: var(--accent); }
+code, pre, kbd { font-family: var(--mono); }
+code { font-size: .9em; background: var(--surface); border: 1px solid var(--border); padding: .1em .4em; border-radius: 6px; }
+h1, h2, h3 { margin: 0; line-height: 1.15; letter-spacing: -.02em; font-weight: 600; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+@media (max-width: 420px) { .wrap { padding: 0 16px; } }
+section { padding: 88px 0; }
+@media (max-width: 720px) { section { padding: 60px 0; } }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-ink); margin-bottom: 14px; font-weight: 500; }
+.lead { color: var(--muted); font-size: 18px; max-width: 60ch; }
+.title { font-size: clamp(28px, 4vw, 40px); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ---------- top bar ---------- */
+.top {
+  position: sticky; top: 0; z-index: 30;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -.01em; }
+.brand img { width: 28px; height: 28px; border-radius: 8px; }
+.nav { display: flex; gap: 6px; align-items: center; }
+.nav a { padding: 7px 11px; border-radius: 8px; font-size: 14px; color: var(--muted); }
+.nav a:hover { color: var(--fg); background: var(--surface); }
+.nav .gh { color: var(--fg); border: 1px solid var(--border); display: inline-flex; align-items: center; gap: 7px; }
+.nav .gh svg { width: 15px; height: 15px; }
+@media (max-width: 720px) { .nav a:not(.gh) { display: none; } }
+
+/* ---------- hero ---------- */
+.hero { position: relative; padding: 96px 0 72px; overflow: hidden; }
+@media (max-width: 720px) { .hero { padding: 60px 0 48px; } }
+.hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(900px 420px at 15% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+    radial-gradient(600px 300px at 90% 10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%);
+}
+.hero .wrap { position: relative; }
+.hero h1 {
+  font-size: clamp(38px, 6.2vw, 72px);
+  font-weight: 700;
+  letter-spacing: -.035em;
+  max-width: 14ch;
+}
+.hero h1 em { font-style: normal; color: var(--accent-ink); }
+.hero .lead { margin: 22px 0 34px; font-size: clamp(17px, 2vw, 20px); }
+.pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 500;
+  padding: 6px 12px 6px 8px; border-radius: 999px;
+  background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow);
+  margin-bottom: 26px;
+}
+.pill b { font-weight: 600; background: var(--accent); color: #fff; font-size: 11px; padding: 2px 7px; border-radius: 999px; letter-spacing: .02em; }
+
+.install {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch;
+  max-width: 780px;
+  background: var(--code-bg); color: var(--code-fg);
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, #fff 10%, transparent);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.install pre {
+  margin: 0; padding: 18px 20px;
+  font-size: 14px; line-height: 1.5;
+  overflow-x: auto; white-space: pre; scrollbar-width: thin;
+}
+.install pre .p { color: #8d8a85; user-select: none; }
+.install pre .c { color: #8db0ff; }
+.install pre .s { color: #f1f0ed; }
+.install button {
+  all: unset; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 18px;
+  font: 500 13px var(--font);
+  color: #f1f0ed;
+  border-left: 1px solid color-mix(in srgb, #fff 10%, transparent);
+  background: color-mix(in srgb, #fff 4%, transparent);
+  transition: background .15s;
+}
+.install button:hover { background: color-mix(in srgb, #fff 9%, transparent); }
+.install button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.install button svg { width: 15px; height: 15px; }
+.install button.done { color: #9fd3a6; }
+@media (max-width: 520px) {
+  .install { grid-template-columns: 1fr; }
+  .install pre { padding: 14px 16px; font-size: 13px; }
+  .install button { justify-content: center; padding: 11px; border-left: 0; border-top: 1px solid color-mix(in srgb, #fff 10%, transparent); }
+}
+.hero-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px; font-size: 13px; color: var(--muted); }
+.hero-meta span { display: inline-flex; align-items: center; gap: 6px; }
+.hero-meta svg { width: 14px; height: 14px; color: var(--accent); }
+.cta-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 28px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: 10px;
+  font-weight: 500; font-size: 14px;
+  border: 1px solid var(--border); background: var(--card); color: var(--fg);
+  box-shadow: var(--shadow); transition: transform .12s, box-shadow .12s;
+}
+.btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-lg); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn svg { width: 16px; height: 16px; }
+
+/* ---------- mock panel ---------- */
+.mock-wrap { margin-top: 64px; perspective: 1600px; }
+@media (max-width: 720px) { .mock-wrap { margin-top: 44px; } }
+.mock {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden; font-size: 13px;
+  transform: rotateX(4deg); transform-origin: 50% 0;
+}
+@media (prefers-reduced-motion: no-preference) { .mock { animation: settle 1.1s cubic-bezier(.2,.7,.2,1) both; } }
+@keyframes settle { from { transform: rotateX(10deg) translateY(16px); opacity: 0; } to { transform: rotateX(4deg) translateY(0); opacity: 1; } }
+.mock-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.mock-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--border); display: inline-block; }
+.mock-bar .url { margin-left: 10px; flex: 1; font-family: var(--mono); font-size: 12px; color: var(--muted); background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mock-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px 0; gap: 12px; }
+.mock-head .brand img { width: 22px; height: 22px; border-radius: 6px; }
+.mock-head .brand { font-size: 15px; }
+.mock-head .tabs { display: flex; gap: 4px; }
+.mock-head .tabs span { padding: 5px 10px; border-radius: 7px; color: var(--muted); }
+.mock-head .tabs span.on { background: var(--surface); color: var(--fg); font-weight: 500; }
+.mock-head .nb { font-size: 12px; padding: 6px 11px; background: var(--accent); color: #fff; border-radius: 8px; font-weight: 500; white-space: nowrap; }
+.mock-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 18px 22px 0; }
+.stat { background: var(--surface); border-radius: 10px; padding: 11px 13px; }
+.stat b { display: block; font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.stat .v { font-size: 20px; font-weight: 600; letter-spacing: -.02em; margin-top: 2px; }
+.stat .bar { height: 5px; border-radius: 3px; background: var(--border); margin-top: 8px; overflow: hidden; }
+.stat .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.mock-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 18px 22px 22px; }
+.appcard { border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; background: var(--card); box-shadow: var(--shadow); }
+.appcard .n { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 14px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.dot.warn { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); }
+.dot.live { animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--ok) 8%, transparent); } }
+.appcard .img { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appcard .meta { display: flex; justify-content: space-between; margin-top: 10px; font-size: 11px; color: var(--muted); }
+.appcard .meta .ssl { color: var(--accent-ink); font-weight: 500; }
+.appcard.deploying { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.appcard .prog { height: 4px; border-radius: 2px; background: var(--border); margin-top: 10px; overflow: hidden; }
+.appcard .prog i { display: block; height: 100%; width: 62%; background: var(--accent); border-radius: 2px; }
+@media (prefers-reduced-motion: no-preference) { .appcard .prog i { animation: grow 6s ease-in-out infinite alternate; } }
+@keyframes grow { from { width: 35%; } to { width: 88%; } }
+@media (max-width: 860px) { .mock-grid { grid-template-columns: repeat(2, 1fr); } .appcard:nth-child(5), .appcard:nth-child(6) { display: none; } }
+@media (max-width: 600px) {
+  .mock-head .tabs { display: none; }
+  .mock-stats { grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 14px 14px 0; }
+  .stat .v { font-size: 16px; }
+  .mock-grid { grid-template-columns: 1fr; padding: 14px; }
+  .appcard:nth-child(4) { display: none; }
+  .mock-head { padding: 14px 14px 0; }
+}
+
+/* ---------- 3 steps ---------- */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 44px; }
+@media (max-width: 860px) { .steps { grid-template-columns: 1fr; } }
+.step { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 26px 24px 24px; box-shadow: var(--shadow); }
+.step .num { font-family: var(--mono); font-size: 12px; color: var(--accent-ink); font-weight: 500; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+.step .num::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.step h3 { font-size: 20px; margin-bottom: 8px; }
+.step p { margin: 0; color: var(--muted); font-size: 15px; }
+.step pre { margin: 16px 0 0; background: var(--code-bg); color: var(--code-fg); font-size: 12.5px; padding: 12px 14px; border-radius: 10px; overflow-x: auto; white-space: pre; }
+.step pre .p { color: #8d8a85; }
+.step .ui-line { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+.step .ui-line span { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.step .ui-line span::before { content: ""; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--accent); flex: none; }
+.step .ui-line span.ok::before { background: var(--accent); box-shadow: inset 0 0 0 3px var(--surface); }
+.step .ui-line span.ok { color: var(--muted); }
+.step .ui-line span.now { border-color: var(--accent); font-weight: 500; }
+
+/* ---------- features ---------- */
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 44px; }
+@media (max-width: 960px) { .features { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .features { grid-template-columns: 1fr; } }
+.feat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; box-shadow: var(--shadow); transition: transform .15s, box-shadow .15s; }
+.feat:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.feat .ico { width: 36px; height: 36px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); display: grid; place-items: center; margin-bottom: 16px; }
+.feat .ico svg { width: 18px; height: 18px; }
+.feat h3 { font-size: 16px; margin-bottom: 6px; }
+.feat p { margin: 0; color: var(--muted); font-size: 14.5px; }
+.feat .soon { display: inline-block; margin-left: 6px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; padding: 2px 6px; border-radius: 999px; background: var(--surface); color: var(--muted); vertical-align: middle; font-weight: 500; }
+
+/* ---------- requirements ---------- */
+.req-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 40px; margin-top: 44px; align-items: start; }
+@media (max-width: 860px) { .req-grid { grid-template-columns: 1fr; gap: 28px; } }
+.tabs { display: flex; gap: 4px; background: var(--surface); padding: 4px; border-radius: 11px; width: fit-content; max-width: 100%; }
+.tabs button { all: unset; cursor: pointer; padding: 7px 14px; border-radius: 8px; font: 500 14px var(--font); color: var(--muted); }
+.tabs button[aria-selected="true"] { background: var(--card); color: var(--fg); box-shadow: var(--shadow); }
+.tabs button:focus-visible { outline: 2px solid var(--accent); }
+.panel { display: none; margin-top: 18px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; box-shadow: var(--shadow); }
+.panel.on { display: block; }
+.panel h3 { font-size: 17px; display: flex; align-items: center; gap: 10px; }
+.badge { font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+.badge.full { background: var(--accent-soft); color: var(--accent-ink); }
+.badge.partial { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.panel p { color: var(--muted); font-size: 14.5px; margin: 10px 0 0; }
+.panel table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
+.panel td { padding: 9px 0; border-top: 1px solid var(--border); vertical-align: top; }
+.panel td:first-child { color: var(--muted); width: 38%; padding-right: 12px; }
+.panel td svg { width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; color: var(--accent); }
+.panel td .no svg { color: var(--bad); }
+.reqs { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.reqs li { display: grid; grid-template-columns: 36px 1fr; gap: 12px; padding: 14px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); align-items: start; }
+.reqs .ico { width: 36px; height: 36px; border-radius: 10px; background: var(--surface); display: grid; place-items: center; color: var(--accent-ink); }
+.reqs .ico svg { width: 18px; height: 18px; }
+.reqs b { display: block; font-weight: 600; font-size: 15px; }
+.reqs span { color: var(--muted); font-size: 14px; }
+
+/* ---------- FAQ ---------- */
+.faq { max-width: 760px; margin: 36px auto 0; display: grid; gap: 10px; }
+.faq details { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.faq summary { cursor: pointer; list-style: none; padding: 18px 20px; font-weight: 600; font-size: 16px; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; font-family: var(--mono); color: var(--muted); font-size: 18px; transition: transform .2s; flex: none; }
+.faq details[open] summary::after { transform: rotate(45deg); }
+.faq .a { padding: 0 20px 20px; color: var(--muted); font-size: 15px; }
+.faq .a p { margin: 0 0 10px; }
+.faq .a p:last-child { margin: 0; }
+
+/* ---------- thanks ---------- */
+.thanks { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.credits { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 40px; max-width: 900px; margin-left: auto; margin-right: auto; }
+@media (max-width: 760px) { .credits { grid-template-columns: 1fr; } }
+.credit { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 26px 26px 22px; box-shadow: var(--shadow); transition: transform .15s, box-shadow .15s; }
+.credit:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.credit-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.credit-name { font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
+.credit-by { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.credit p { color: var(--muted); font-size: 15px; margin: 12px 0 18px; flex: 1; }
+.credit-link { font-size: 14px; font-weight: 500; color: var(--accent-ink); }
+
+/* ---------- final CTA + footer ---------- */
+.final { text-align: center; }
+.final .install { margin: 28px auto 0; text-align: left; }
+.final .lead { margin-left: auto; margin-right: auto; }
+footer { border-top: 1px solid var(--border); padding: 32px 0 44px; font-size: 14px; color: var(--muted); }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; align-items: center; }
+footer nav { display: flex; gap: 18px; flex-wrap: wrap; }
+footer nav a:hover { color: var(--fg); }
+.center { text-align: center; }
+.center .lead { margin: 0 auto; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#"><img src="assets/favicon.svg" alt="" width="28" height="28">dokk</a>
+    <nav class="nav" aria-label="Site">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#requirements">Requirements</a>
+      <a href="#faq">FAQ</a>
+      <a class="gh" href="https://github.com/eduardotorresdev/dokk">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap">
+    <div class="pill"><b>v0.1</b> Open source - MIT - single Go binary</div>
+    <h1>A fresh server to a <em>Dokku PaaS</em>, with one binary.</h1>
+    <p class="lead">dokk is a web panel for <a href="https://dokku.com">Dokku</a>. It installs Dokku for you, walks you through your first deploy, and then stays around as the dashboard: apps, logs, releases, host metrics. No other dependencies to prepare.</p>
+
+    <div class="install" id="install-top">
+      <pre><span class="p">$ </span><span class="c">curl</span> -fsSL https://eduardotorresdev.github.io/dokk/install.sh <span class="p">|</span> <span class="c">sudo sh</span></pre>
+      <button type="button" data-copy="curl -fsSL https://eduardotorresdev.github.io/dokk/install.sh | sudo sh" aria-label="Copy install command">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        <span>Copy</span>
+      </button>
+    </div>
+    <div class="hero-meta">
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Ubuntu 22.04 / 24.04 / 26.04</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Debian 11 / 12 / 13</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>amd64 &amp; arm64</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>sha256-verified, systemd service</span>
+    </div>
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/eduardotorresdev/dokk/releases">Releases</a>
+      <a class="btn" href="https://github.com/eduardotorresdev/dokk#readme">Read the docs</a>
+    </div>
+
+    <div class="mock-wrap" aria-hidden="true">
+      <div class="mock">
+        <div class="mock-bar"><i></i><i></i><i></i><span class="url">https://panel.example.com:7070/</span></div>
+        <div class="mock-head">
+          <span class="brand"><img src="assets/favicon.svg" alt="">dokk</span>
+          <span class="tabs"><span class="on">Apps</span><span>Registries</span></span>
+          <span class="nb">+ New app</span>
+        </div>
+        <div class="mock-stats">
+          <div class="stat"><b>CPU</b><div class="v">14%</div><div class="bar"><i style="width:14%"></i></div></div>
+          <div class="stat"><b>Memory</b><div class="v">1.3 / 4 GB</div><div class="bar"><i style="width:33%"></i></div></div>
+          <div class="stat"><b>Disk</b><div class="v">21 / 80 GB</div><div class="bar"><i style="width:26%"></i></div></div>
+        </div>
+        <div class="mock-grid">
+          <div class="appcard"><div class="n">api <span class="dot live"></span></div><div class="img">ghcr.io/acme/api:2.4.1</div><div class="meta"><span>web ×2 - 180 MB</span><span class="ssl">SSL - 61 days</span></div></div>
+          <div class="appcard"><div class="n">landing <span class="dot live"></span></div><div class="img">nginx:1.27-alpine</div><div class="meta"><span>web ×1 - 12 MB</span><span class="ssl">SSL - 61 days</span></div></div>
+          <div class="appcard deploying"><div class="n">worker <span class="dot warn"></span></div><div class="img">ghcr.io/acme/worker:2.5.0</div><div class="meta"><span>Pulling image…</span><span>0:42</span></div><div class="prog"><i></i></div></div>
+          <div class="appcard"><div class="n">docs <span class="dot live"></span></div><div class="img">docker.io/acme/docs:latest</div><div class="meta"><span>web ×1 - 40 MB</span><span class="ssl">SSL - 61 days</span></div></div>
+          <div class="appcard"><div class="n">grafana <span class="dot live"></span></div><div class="img">grafana/grafana:11.2.0</div><div class="meta"><span>web ×1 - 210 MB</span><span class="ssl">SSL - 61 days</span></div></div>
+          <div class="appcard"><div class="n">plausible <span class="dot live"></span></div><div class="img">ghcr.io/plausible/community-edition:v2</div><div class="meta"><span>web ×1 - 390 MB</span><span class="ssl">SSL - 61 days</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="eyebrow">How it works</div>
+    <h2 class="title">One binary. The whole server.</h2>
+    <p class="lead">Dokku is a great mini-Heroku, but setting it up means a bootstrap script, a few plugins, and a terminal for everything after. dokk collapses that into a single download and a browser tab.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="num">01</div>
+        <h3>Install dokk</h3>
+        <p>Run the one-liner as root on a fresh Ubuntu or Debian box. It picks your arch, verifies the checksum and starts a systemd service.</p>
+        <pre><span class="p">$</span> curl -fsSL …/install.sh | sudo sh
+<span class="p">✓</span> dokk v0.1.0 (linux/arm64)
+<span class="p">✓</span> sha256 ok
+<span class="p">✓</span> systemd: dokk.service active
+<span class="p">→</span> http://127.0.0.1:7070</pre>
+      </div>
+      <div class="step">
+        <div class="num">02</div>
+        <h3>Open the panel</h3>
+        <p>Create your superuser. The onboarding checks the server and, if Dokku is missing, installs it with the official <code>bootstrap.sh</code>, live, from the browser.</p>
+        <div class="ui-line">
+          <span class="ok">Fetching the latest version</span>
+          <span class="ok">Installing Dokku</span>
+          <span class="now">Setting up Let's Encrypt</span>
+          <span>Adding the SSH key</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">03</div>
+        <h3>Ship an app</h3>
+        <p>Pick a Docker image, paste your <code>.env</code>, choose a domain and HTTPS. Watch the pull, start and health checks until the app is live.</p>
+        <div class="ui-line">
+          <span class="ok">Pulling image</span>
+          <span class="ok">Starting container</span>
+          <span class="now">Health checks</span>
+          <span>Live</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="eyebrow">Features</div>
+    <h2 class="title">Everything you'd otherwise do over SSH.</h2>
+    <p class="lead">dokk doesn't replace Dokku. It drives it, with the same commands you'd type, and shows you what's happening.</p>
+
+    <div class="features">
+      <div class="feat">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg></div>
+        <h3>Guided onboarding</h3>
+        <p>Detects an existing Dokku or installs it. Sets the global domain (or <code>sslip.io</code> with zero DNS), Let's Encrypt email, and takes you to the first deploy.</p>
+      </div>
+      <div class="feat">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg></div>
+        <h3>Live dashboard</h3>
+        <p>Every app with its status, processes and share of the machine, pushed over SSE. Host CPU, memory and disk at a glance. Filter, sort, group.</p>
+      </div>
+      <div class="feat">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 9 3 3-3 3M13 15h3"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg></div>
+        <h3>App detail</h3>
+        <p>Streaming logs, build log per deploy, deploy history, ports, linked services. Start, stop, restart, rename, or remove with progress.</p>
+      </div>
+      <div class="feat">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></div>
+        <h3>Deploy from any registry</h3>
+        <p>Docker Hub, GHCR, GitLab or your own. Log in once with <code>registry:login</code>, then install any published tag straight from the Versions tab.</p>
+      </div>
+      <div class="feat">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div>
+        <h3>Env vars editor</h3>
+        <p>Add, edit, reveal and copy variables. Paste a whole <code>.env</code> into any field and it splits into rows. Restart on save, or not.</p>
+      </div>
+      <div class="feat">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <h3>Domains &amp; HTTPS</h3>
+        <p>Per-app domain and Let's Encrypt certificate from the wizard. See expiry on each card, renew in one click, keep auto-renewal on.</p>
+      </div>
+      <div class="feat">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></div>
+        <h3>Superuser login</h3>
+        <p>First run asks you to create the admin account, or set <code>DOKK_USER</code> / <code>DOKK_PASSWORD</code>. Sessions in a cookie, data in <code>/var/lib/dokk</code>.</p>
+      </div>
+      <div class="feat">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></div>
+        <h3>Three languages</h3>
+        <p>English, Español and Português (BR), switchable from the panel.</p>
+      </div>
+      <div class="feat">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div>
+        <h3>More deploy methods <span class="soon">soon</span></h3>
+        <p>Git push, Dockerfile and buildpacks are on the roadmap. Today dokk deploys prebuilt Docker images.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="requirements">
+  <div class="wrap">
+    <div class="eyebrow">Requirements</div>
+    <h2 class="title">A Linux box with root. That's the list.</h2>
+    <p class="lead">dokk runs anywhere Dokku already runs. For a brand-new server where dokk installs Dokku itself, you need a distro Dokku's official installer supports.</p>
+
+    <div class="req-grid">
+      <div>
+        <div class="tabs" role="tablist" aria-label="Distributions">
+          <button role="tab" aria-selected="true" aria-controls="d-ubuntu" id="t-ubuntu">Ubuntu</button>
+          <button role="tab" aria-selected="false" aria-controls="d-debian" id="t-debian">Debian</button>
+          <button role="tab" aria-selected="false" aria-controls="d-other" id="t-other">Other distros</button>
+        </div>
+
+        <div class="panel on" role="tabpanel" id="d-ubuntu" aria-labelledby="t-ubuntu">
+          <h3>Ubuntu <span class="badge full">Full support</span></h3>
+          <p>Recommended for a fresh server. dokk installs Dokku, Docker and nginx from the onboarding.</p>
+          <table>
+            <tr><td>Versions</td><td>22.04 LTS, 24.04 LTS, 26.04 LTS</td></tr>
+            <tr><td>Architectures</td><td>amd64, arm64</td></tr>
+            <tr><td>Installs Dokku</td><td><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Yes, official <code>bootstrap.sh</code></td></tr>
+            <tr><td>Existing Dokku</td><td><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Detected and reused</td></tr>
+          </table>
+        </div>
+
+        <div class="panel" role="tabpanel" id="d-debian" aria-labelledby="t-debian" hidden>
+          <h3>Debian <span class="badge full">Full support</span></h3>
+          <p>Same as Ubuntu: dokk runs the official installer and takes it from there.</p>
+          <table>
+            <tr><td>Versions</td><td>11 (bullseye), 12 (bookworm), 13 (trixie)</td></tr>
+            <tr><td>Architectures</td><td>amd64, arm64</td></tr>
+            <tr><td>Installs Dokku</td><td><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Yes, official <code>bootstrap.sh</code></td></tr>
+            <tr><td>Existing Dokku</td><td><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Detected and reused</td></tr>
+          </table>
+        </div>
+
+        <div class="panel" role="tabpanel" id="d-other" aria-labelledby="t-other" hidden>
+          <h3>Fedora, Rocky, Alma, RHEL, Arch, Amazon Linux… <span class="badge partial">Panel only</span></h3>
+          <p>The dokk binary runs on any Linux, but Dokku's official installer does not support these distros, so the onboarding can't install Dokku for you. If Dokku is already there, dokk works as the panel. For a new server, pick Ubuntu or Debian.</p>
+          <table>
+            <tr><td>Architectures</td><td>amd64, arm64</td></tr>
+            <tr><td>Installs Dokku</td><td><span class="no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></span>No, not supported by Dokku</td></tr>
+            <tr><td>Existing Dokku</td><td><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Detected and reused</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <ul class="reqs">
+        <li><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg></div><div><b>1 GB RAM minimum</b><span>Dokku asks for 1 GB+. 2 GB is comfortable once you run a few apps.</span></div></li>
+        <li><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/></svg></div><div><b>~10 GB disk</b><span>Docker images and build layers add up. More if you keep many tags.</span></div></li>
+        <li><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v5c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V7l-8-4z"/></svg></div><div><b>Root (sudo)</b><span>Needed to install Dokku and run its commands. The service runs as root.</span></div></li>
+        <li><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M4 6h16M4 18h16"/></svg></div><div><b>Ports 7070, 80, 443</b><span>7070 for the panel (bound to localhost by default), 80/443 for your apps.</span></div></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <div class="center">
+      <div class="eyebrow">FAQ</div>
+      <h2 class="title">Questions people ask first.</h2>
+    </div>
+    <div class="faq">
+      <details open>
+        <summary>Is dokk a replacement for Dokku?</summary>
+        <div class="a"><p>No. dokk is a panel on top of Dokku. Every action in the UI is a real Dokku command run on the server, so you can keep using the <code>dokku</code> CLI, plugins, and git push alongside it. Remove dokk and your apps keep running.</p></div>
+      </details>
+      <details>
+        <summary>I already have Dokku. Can I use dokk?</summary>
+        <div class="a"><p>Yes. The onboarding detects the existing install and its version, skips the installer, and lists your current apps. Nothing is changed unless you ask.</p></div>
+      </details>
+      <details>
+        <summary>Is it safe to expose port 7070?</summary>
+        <div class="a"><p>By default dokk listens on <code>127.0.0.1:7070</code>, so it isn't reachable from outside. The simplest secure access is an SSH tunnel: <code>ssh -L 7070:127.0.0.1:7070 root@SERVER</code>, then open <code>http://localhost:7070</code>.</p><p>If you want it on the network, put it behind a reverse proxy with TLS (nginx, Caddy, Dokku itself), or set <code>DOKK_ADDR=0.0.0.0:7070</code> at install time and restrict with a firewall. dokk has a superuser login, but it runs as root, so treat it like SSH access.</p></div>
+      </details>
+      <details>
+        <summary>What can I deploy today?</summary>
+        <div class="a"><p>Prebuilt Docker images from any registry: public ones directly, private ones after a registry login. Git push, Dockerfile and buildpack deploys through the panel are coming; they work via the Dokku CLI meanwhile.</p></div>
+      </details>
+      <details>
+        <summary>How do I upgrade or uninstall?</summary>
+        <div class="a"><p>Upgrade: run the install one-liner again. It downloads the latest release and restarts the service. Pin a version with <code>DOKK_VERSION=v0.1.0</code>.</p><p>Uninstall: <code>systemctl disable --now dokk &amp;&amp; rm /usr/local/bin/dokk /etc/systemd/system/dokk.service</code>. Data lives in <code>/var/lib/dokk</code>. Dokku and your apps are untouched.</p></div>
+      </details>
+      <details>
+        <summary>What does the installer actually do?</summary>
+        <div class="a"><p>Detects your architecture, downloads the latest release from GitHub, verifies the sha256 from <code>checksums.txt</code>, installs to <code>/usr/local/bin/dokk</code>, and creates and starts a <code>dokk</code> systemd unit. Set <code>DOKK_NO_SERVICE=1</code> to skip the service. You can also grab <code>dokk_linux_amd64.tar.gz</code> or <code>dokk_linux_arm64.tar.gz</code> from the releases page and do it by hand.</p></div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section id="thanks" class="thanks">
+  <div class="wrap">
+    <div class="center">
+      <div class="eyebrow">Built on</div>
+      <h2 class="title">Standing on two very good projects.</h2>
+      <p class="lead">dokk is a thin layer. The heavy lifting, and most of the credit, belongs here.</p>
+    </div>
+    <div class="credits">
+      <a class="credit" href="https://dokku.com">
+        <div class="credit-head"><span class="credit-name">Dokku</span><span class="credit-by">dokku/dokku - MIT</span></div>
+        <p>The open-source PaaS that does the real work: builds, deploys, nginx, certificates, process management. Every action in dokk is a Dokku command. dokk exists only because Dokku and its maintainers have kept it excellent for over a decade. Thank you.</p>
+        <span class="credit-link">dokku.com →</span>
+      </a>
+      <a class="credit" href="https://github.com/ganigeorgiev/shablon">
+        <div class="credit-head"><span class="credit-name">shablon</span><span class="credit-by">by Gani Georgiev - MIT</span></div>
+        <p>A tiny no-build reactive UI library. dokk's entire frontend is written with it: no bundler, no framework runtime, just ES modules the Go binary serves. It is a joy to work with, and this panel would be heavier and slower without it. Thanks, Gani.</p>
+        <span class="credit-link">github.com/ganigeorgiev/shablon →</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <h2 class="title">Ship something tonight.</h2>
+    <p class="lead">One command on a fresh server. A browser tab for everything after.</p>
+    <div class="install">
+      <pre><span class="p">$ </span><span class="c">curl</span> -fsSL https://eduardotorresdev.github.io/dokk/install.sh <span class="p">|</span> <span class="c">sudo sh</span></pre>
+      <button type="button" data-copy="curl -fsSL https://eduardotorresdev.github.io/dokk/install.sh | sudo sh" aria-label="Copy install command">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        <span>Copy</span>
+      </button>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>dokk - MIT License - built on <a href="https://dokku.com">Dokku</a> and <a href="https://github.com/ganigeorgiev/shablon">shablon</a></span>
+    <nav aria-label="Links">
+      <a href="https://github.com/eduardotorresdev/dokk">GitHub</a>
+      <a href="https://github.com/eduardotorresdev/dokk/releases">Releases</a>
+      <a href="https://github.com/eduardotorresdev/dokk/issues">Issues</a>
+      <a href="https://dokku.com/docs/">Dokku docs</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // Copy buttons
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    var label = btn.querySelector('span');
+    btn.addEventListener('click', function () {
+      var text = btn.getAttribute('data-copy');
+      var done = function () {
+        btn.classList.add('done'); label.textContent = 'Copied';
+        setTimeout(function () { btn.classList.remove('done'); label.textContent = 'Copy'; }, 1800);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { fallback(text); done(); });
+      } else { fallback(text); done(); }
+    });
+  });
+  function fallback(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  // Distro tabs
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  function select(tab) {
+    tabs.forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      var panel = document.getElementById(t.getAttribute('aria-controls'));
+      panel.classList.toggle('on', on);
+      if (on) panel.removeAttribute('hidden'); else panel.setAttribute('hidden', '');
+    });
+  }
+  tabs.forEach(function (t, i) {
+    t.addEventListener('click', function () { select(t); });
+    t.addEventListener('keydown', function (e) {
+      var j = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : -1;
+      if (j < 0) return;
+      var n = tabs[(j + tabs.length) % tabs.length];
+      n.focus(); select(n);
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+// Textos das telas de acesso: login e criação do superusuário (pt-BR).
+export default {
+    "auth.login.title": "Entrar",
+    "auth.login.subtitle": "Acesse o painel das suas apps no Dokku.",
+    "auth.login.submit": "Entrar",
+    "auth.login.busy": "Entrando…",
+    "auth.email.label": "E-mail",
+    "auth.email.placeholder": "voce@empresa.com",
+    "auth.password.label": "Senha",
+    "auth.name.label": "Nome",
+    "auth.confirm.label": "Confirmar senha",
+    "auth.confirm.placeholder": "repita a senha",
+    "auth.setup.step": "Primeira execução",
+    "auth.setup.title": "Criar superusuário",
+    "auth.setup.subtitle": "Esta conta administra o painel. Só dá para criá-la uma vez.",
+    "auth.setup.defaultName": "Administrador",
+    "auth.setup.password.placeholder": "mínimo {min} caracteres",
+    "auth.setup.error.passwordTooShort": "A senha precisa ter pelo menos {min} caracteres.",
+    "auth.setup.error.mismatch": "As senhas não conferem.",
+    "auth.setup.submit": "Criar e entrar",
+    "auth.setup.busy": "Criando…",
+}

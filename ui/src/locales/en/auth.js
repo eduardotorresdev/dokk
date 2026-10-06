@@ -1,0 +1,22 @@
+// Textos das telas de acesso: login e criação do superusuário (en).
+export default {
+    "auth.login.title": "Sign in",
+    "auth.login.subtitle": "Access the dashboard for your Dokku apps.",
+    "auth.login.submit": "Sign in",
+    "auth.login.busy": "Signing in…",
+    "auth.email.label": "Email",
+    "auth.email.placeholder": "you@company.com",
+    "auth.password.label": "Password",
+    "auth.name.label": "Name",
+    "auth.confirm.label": "Confirm password",
+    "auth.confirm.placeholder": "repeat the password",
+    "auth.setup.step": "First run",
+    "auth.setup.title": "Create superuser",
+    "auth.setup.subtitle": "This account manages the dashboard. It can only be created once.",
+    "auth.setup.defaultName": "Administrator",
+    "auth.setup.password.placeholder": "at least {min} characters",
+    "auth.setup.error.passwordTooShort": "The password must be at least {min} characters long.",
+    "auth.setup.error.mismatch": "Passwords do not match.",
+    "auth.setup.submit": "Create and sign in",
+    "auth.setup.busy": "Creating…",
+}
