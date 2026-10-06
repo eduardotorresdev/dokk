@@ -85,7 +85,10 @@ if [ "${DOKK_NO_SERVICE:-}" = "1" ] || ! command -v systemctl >/dev/null 2>&1 ||
 fi
 
 # Upgrades keep the existing unit (and its -addr) unless DOKK_ADDR is set.
-if [ ! -f "$UNIT" ] || [ -n "${DOKK_ADDR:-}" ]; then
+if [ -f "$UNIT" ] && [ -z "${DOKK_ADDR:-}" ]; then
+  ADDR="$(sed -n 's/^ExecStart=.* -addr \([^ ]*\).*/\1/p' "$UNIT")"
+  ADDR="${ADDR:-127.0.0.1:7070}"
+else
   cat >"$UNIT" <<EOF
 [Unit]
 Description=dokk - web panel for Dokku
