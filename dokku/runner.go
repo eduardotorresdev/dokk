@@ -46,11 +46,13 @@ func (LocalRunner) RunInput(ctx context.Context, stdin, name string, args ...str
 	return stdout.String(), nil
 }
 
+var errRunnerNoStdin = errors.New("runner sem suporte a stdin")
+
 // runInput falha se o Runner não aceitar stdin.
 func (c *Client) runInput(ctx context.Context, stdin, name string, args ...string) (string, error) {
 	r, ok := c.Runner.(InputRunner)
 	if !ok {
-		return "", errors.New("runner sem suporte a stdin")
+		return "", errRunnerNoStdin
 	}
 	return r.RunInput(ctx, stdin, name, args...)
 }

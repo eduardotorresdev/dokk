@@ -58,6 +58,8 @@ type Client struct {
 	// deploy de cada app.
 	LibRoot string
 	// HomeRoot é o DOKKU_ROOT, onde ficam os repositórios git das apps.
+	// Os dois são os caminhos do Dokku; no modo docker o host os vê dentro
+	// de DockerDataRoot (ver lib e home).
 	HomeRoot string
 
 	mu      sync.Mutex
@@ -170,7 +172,7 @@ type appState struct {
 
 func (c *Client) readState(app string) appState {
 	st := appState{scale: map[string]int{}}
-	psDir := filepath.Join(c.LibRoot, "config", "ps", app)
+	psDir := filepath.Join(c.lib(), "config", "ps", app)
 	if b, err := os.ReadFile(filepath.Join(psDir, "scale")); err == nil {
 		for _, kv := range strings.FieldsFunc(string(b), func(r rune) bool { return r == ',' || r == '\n' || r == ' ' }) {
 			typ, n, ok := strings.Cut(kv, "=")
@@ -182,7 +184,7 @@ func (c *Client) readState(app string) appState {
 	if b, err := os.ReadFile(filepath.Join(psDir, "restore")); err == nil {
 		st.stopped = strings.TrimSpace(string(b)) == "false"
 	}
-	_, err := os.Stat(filepath.Join(c.LibRoot, "data", "apps", app, ".deploy.lock"))
+	_, err := os.Stat(filepath.Join(c.lib(), "data", "apps", app, ".deploy.lock"))
 	st.locked = err == nil
 	return st
 }

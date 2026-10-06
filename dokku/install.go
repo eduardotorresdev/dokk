@@ -57,35 +57,47 @@ func parseVersion(out string) string {
 	return strings.TrimPrefix(f[len(f)-1], "v")
 }
 
-// HostInfo diz se dá para rodar o bootstrap do Dokku nesta máquina.
+// HostInfo diz se dá para instalar o Dokku nesta máquina e como.
 type HostInfo struct {
-	OS         string `json:"os"`
-	OSVersion  string `json:"os-version"`
+	OS        string `json:"os"`
+	OSVersion string `json:"os-version"`
+	// OSLike é o ID_LIKE do os-release (família da distro).
+	OSLike     string `json:"-"`
 	Arch       string `json:"arch"`
 	Root       bool   `json:"root"`
 	CanInstall bool   `json:"can-install"`
-	Reason     string `json:"reason,omitempty"`
+	// Method é "bootstrap" (bootstrap.sh oficial, Ubuntu/Debian suportados)
+	// ou "docker" (imagem dokku/dokku, qualquer outra distro).
+	Method string `json:"method,omitempty"`
+	Reason string `json:"reason,omitempty"`
 	// ReasonCode ("os", "arch", "root") e ReasonArg deixam a UI e a API
 	// traduzirem o motivo; Reason fica em pt-BR.
 	ReasonCode string `json:"reason-code,omitempty"`
 	ReasonArg  string `json:"reason-arg,omitempty"`
 }
 
-func Host() HostInfo {
+const (
+	MethodBootstrap = "bootstrap"
+	MethodDocker    = "docker"
+)
+
+// Host lê o sistema; force (flag -dokku-mode) fixa o método de instalação.
+func Host(force Mode) HostInfo {
 	osRelease := ""
 	if runtime.GOOS == "linux" {
 		b, _ := os.ReadFile("/etc/os-release")
 		osRelease = string(b)
 	}
-	return hostInfo(runtime.GOOS, runtime.GOARCH, osRelease, os.Geteuid())
+	return hostInfo(runtime.GOOS, runtime.GOARCH, osRelease, os.Geteuid(), force)
 }
 
-var supportedOS = map[string][]string{
+// Versões em que o bootstrap.sh roda. O resto instala pela imagem Docker.
+var bootstrapOS = map[string][]string{
 	"ubuntu": {"22.04", "24.04", "26.04"},
 	"debian": {"11", "12", "13"},
 }
 
-func hostInfo(goos, arch, osRelease string, euid int) HostInfo {
+func hostInfo(goos, arch, osRelease string, euid int, force Mode) HostInfo {
 	h := HostInfo{OS: goos, Arch: arch, Root: euid == 0}
 	for _, l := range strings.Split(osRelease, "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(l), "=")
@@ -98,17 +110,20 @@ func hostInfo(goos, arch, osRelease string, euid int) HostInfo {
 			h.OS = v
 		case "VERSION_ID":
 			h.OSVersion = v
+		case "ID_LIKE":
+			h.OSLike = v
 		}
 	}
-	unsupported := func(name string) string {
-		return fmt.Sprintf("Sistema não suportado (%s). O instalador do Dokku roda em Ubuntu 22.04/24.04/26.04 ou Debian 11/12/13.", name)
+	switch {
+	case force == ModeHost, force == ModeAuto && contains(bootstrapOS[h.OS], h.OSVersion):
+		h.Method = MethodBootstrap
+	default:
+		h.Method = MethodDocker
 	}
 	switch {
 	case goos != "linux":
-		h.Reason, h.ReasonCode, h.ReasonArg = unsupported(goos), "os", goos
-	case !contains(supportedOS[h.OS], h.OSVersion):
-		name := strings.TrimSpace(h.OS + " " + h.OSVersion)
-		h.Reason, h.ReasonCode, h.ReasonArg = unsupported(name), "os", name
+		h.Method = ""
+		h.Reason, h.ReasonCode, h.ReasonArg = fmt.Sprintf("O Dokku só roda em Linux (%s).", goos), "os", goos
 	case arch != "amd64" && arch != "arm64":
 		h.Reason, h.ReasonCode, h.ReasonArg = fmt.Sprintf("Arquitetura não suportada (%s).", arch), "arch", arch
 	case euid != 0:
@@ -143,8 +158,14 @@ func Bootstrap(ctx context.Context, tag, dir string, line func(string)) error {
 	if err := download(ctx, "https://dokku.com/install/"+tag+"/bootstrap.sh", path); err != nil {
 		return &DownloadError{Err: err}
 	}
-	cmd := exec.CommandContext(ctx, "bash", path)
-	cmd.Env = append(os.Environ(), "DOKKU_TAG="+tag, "DEBIAN_FRONTEND=noninteractive", "DOKKU_SKIP_KEY_FILE=true")
+	return runLines(ctx, []string{"DOKKU_TAG=" + tag, "DEBIAN_FRONTEND=noninteractive", "DOKKU_SKIP_KEY_FILE=true"}, line, "bash", path)
+}
+
+// runLines roda o comando com env extra e manda cada linha (stdout+stderr,
+// sem ANSI) para line.
+func runLines(ctx context.Context, env []string, line func(string), name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = append(os.Environ(), env...)
 	// Mesmo esquema do StreamLogs: grupo próprio para matar apt, docker e
 	// cia. junto se o contexto acabar.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -188,7 +209,7 @@ func download(ctx context.Context, u, path string) error {
 // GlobalDomains lê HomeRoot/VHOST (domínios globais, um por linha).
 func (c *Client) GlobalDomains() []string {
 	out := []string{}
-	f, err := os.Open(filepath.Join(c.HomeRoot, "VHOST"))
+	f, err := os.Open(filepath.Join(c.home(), "VHOST"))
 	if err != nil {
 		return out
 	}
@@ -258,22 +279,63 @@ func (c *Client) EnsureSSHKey(ctx context.Context, name, key string, replacing, 
 // LetsencryptEmail devolve o e-mail global do plugin letsencrypt ("" se não
 // houver), lido da propriedade em LibRoot/config/letsencrypt/--global/email.
 func (c *Client) LetsencryptEmail() string {
-	b, err := os.ReadFile(filepath.Join(c.LibRoot, "config", "letsencrypt", "--global", "email"))
+	b, err := os.ReadFile(filepath.Join(c.lib(), "config", "letsencrypt", "--global", "email"))
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(b))
 }
 
-// LetsencryptInstalled diz se o plugin está habilitado.
+// LetsencryptInstalled diz se o plugin está habilitado. No modo docker os
+// plugins ficam na camada do container, fora do volume: pergunta ao Dokku.
 func (c *Client) LetsencryptInstalled() bool {
-	_, err := os.Stat(filepath.Join(c.LibRoot, "plugins", "enabled", "letsencrypt"))
+	if c.Mode(context.Background()) == ModeDocker {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, err := c.Runner.Run(ctx, "dokku", "plugin:installed", "letsencrypt")
+		return err == nil
+	}
+	_, err := os.Stat(filepath.Join(c.lib(), "plugins", "enabled", "letsencrypt"))
 	return err == nil
 }
 
+const letsencryptRepo = "https://github.com/dokku/dokku-letsencrypt.git"
+
 // InstallLetsencrypt instala o plugin oficial; devolve o stdout para o log.
+// No modo docker também entra no plugin-list do volume, que o container
+// reinstala ao ser recriado (numa atualização da imagem, por exemplo).
 func (c *Client) InstallLetsencrypt(ctx context.Context) (string, error) {
-	return c.Runner.Run(ctx, "dokku", "plugin:install", "https://github.com/dokku/dokku-letsencrypt.git", "letsencrypt")
+	out, err := c.Runner.Run(ctx, "dokku", "plugin:install", letsencryptRepo, "letsencrypt")
+	if err != nil || c.Mode(ctx) != ModeDocker {
+		return out, err
+	}
+	return out, addPluginList(filepath.Join(DockerDataRoot, "plugin-list"), "letsencrypt", letsencryptRepo)
+}
+
+// addPluginList acrescenta "nome: repo" ao plugin-list se o nome não estiver lá.
+func addPluginList(path, name, repo string) error {
+	b, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if k, _, ok := strings.Cut(l, ":"); ok && strings.TrimSpace(k) == name {
+			return nil
+		}
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	prefix := ""
+	if len(b) > 0 && !strings.HasSuffix(string(b), "\n") {
+		prefix = "\n"
+	}
+	if _, err := fmt.Fprintf(f, "%s%s: %s\n", prefix, name, repo); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // SetupLetsencrypt grava o e-mail global e liga o cron de renovação.

@@ -169,7 +169,7 @@ func (c *Client) registryToken(ctx context.Context, ref ImageRef) (string, error
 // registryAuth devolve o "auth" (base64 de usuário:senha) do docker login
 // do dokku para o registry, se houver.
 func (c *Client) registryAuth(registry string) string {
-	b, err := os.ReadFile(c.HomeRoot + "/.docker/config.json")
+	b, err := os.ReadFile(c.home() + "/.docker/config.json")
 	if err != nil {
 		return ""
 	}

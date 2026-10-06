@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"path"
 	"path/filepath"
@@ -32,6 +33,7 @@ func main() {
 	dataDir := flag.String("data", "/var/lib/dokk", "diretório de dados do dokk (superusuário)")
 	interval := flag.Duration("interval", 5*time.Second, "intervalo entre checks")
 	dokkuTag := flag.String("dokku-tag", "", "versão do Dokku instalada pelo onboarding (vazio = a mais recente)")
+	dokkuMode := flag.String("dokku-mode", os.Getenv("DOKK_DOKKU_MODE"), "onde o Dokku roda: auto, host (binário dokku) ou docker (container dokku)")
 	showVersion := flag.Bool("version", false, "mostra a versão e sai")
 	flag.Parse()
 	if *showVersion {
@@ -43,7 +45,11 @@ func main() {
 	defer stop()
 
 	actions := newActions()
-	client := dokku.NewClient(dokku.LocalRunner{})
+	mode, ok := dokku.ParseMode(*dokkuMode)
+	if !ok {
+		log.Fatalf("-dokku-mode inválido: %q (auto, host ou docker)", *dokkuMode)
+	}
+	client := dokku.NewClient(&dokku.DokkuRunner{Base: dokku.LocalRunner{}, Force: mode})
 	monitor := dokku.NewMonitor(client, *interval)
 	go monitor.Run(ctx)
 	host := &hostSampler{}
@@ -518,7 +524,7 @@ func main() {
 		w.Header().Set("X-Accel-Buffering", "no")
 		flusher.Flush()
 
-		err := dokku.StreamLogs(r.Context(), app.Name, 200, func(line string) {
+		err := client.StreamLogs(r.Context(), app.Name, 200, func(line string) {
 			data, _ := json.Marshal(line)
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
@@ -541,7 +547,9 @@ func main() {
 	p := loadPrefs(filepath.Join(*dataDir, "prefs.json"))
 	a.prefs = p
 	prefsRoutes(mux, p)
-	newOnboarding(*dataDir, *dokkuTag, client, monitor).routes(mux)
+	ob := newOnboarding(*dataDir, *dokkuTag, client, monitor)
+	ob.mode = mode
+	ob.routes(mux)
 	registryRoutes(mux, client, monitor)
 	mux.HandleFunc("POST /api/setup", a.setup)
 	mux.HandleFunc("POST /api/login", a.login)

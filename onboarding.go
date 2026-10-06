@@ -1,6 +1,7 @@
 package main
 
-// Onboarding: detecta o Dokku, instala pelo bootstrap oficial e faz a
+// Onboarding: detecta o Dokku, instala pelo bootstrap oficial (ou pela
+// imagem Docker nas distros que ele não cobre) e faz a
 // configuração inicial. As tarefas longas (install, configure) rodam uma
 // por vez em segundo plano; a UI acompanha o log por polling.
 
@@ -25,8 +26,9 @@ import (
 )
 
 type onboarding struct {
-	dir     string // dataDir: onboarding.json, bootstrap.sh, onboarding.log
-	tag     string // -dokku-tag
+	dir     string     // dataDir: onboarding.json, bootstrap.sh, onboarding.log
+	tag     string     // -dokku-tag
+	mode    dokku.Mode // -dokku-mode: fixa o método de instalação
 	client  *dokku.Client
 	monitor *dokku.Monitor
 	state   *onboardingState
@@ -266,7 +268,7 @@ func (o *onboarding) status(w http.ResponseWriter, r *http.Request) {
 		o.state.markDokkuSeen()
 	}
 	// O motivo vem em pt-BR do pacote dokku; aqui sai no idioma da requisição.
-	host := dokku.Host()
+	host := dokku.Host(o.mode)
 	if key := hostReasonKey(host.ReasonCode); key != "" {
 		if host.ReasonArg != "" {
 			host.Reason = msg(r, key, host.ReasonArg)
@@ -321,7 +323,8 @@ func (o *onboarding) install(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusConflict, "err.dokkuInstalled")
 		return
 	}
-	if h := dokku.Host(); !h.CanInstall {
+	h := dokku.Host(o.mode)
+	if !h.CanInstall {
 		if key := hostReasonKey(h.ReasonCode); key == "" {
 			writeJSON(w, http.StatusPreconditionFailed, map[string]string{"error": h.Reason})
 		} else if h.ReasonArg != "" {
@@ -340,15 +343,30 @@ func (o *onboarding) install(w http.ResponseWriter, r *http.Request) {
 		if tag == "" {
 			tag = dokku.LatestTag(ctx)
 		}
-		log("-----> " + msgLang(lang, "joblog.installing", tag))
-		step("install")
-		if err := dokku.Bootstrap(ctx, tag, o.dir, log); err != nil {
-			var dl *dokku.DownloadError
-			if errors.As(err, &dl) {
-				return errors.New(errMsg(lang, err))
+		if h.Method == dokku.MethodDocker {
+			step("docker")
+			log("-----> " + msgLang(lang, "joblog.docker"))
+			if err := dokku.EnsureDocker(ctx, h, log); err != nil {
+				return fmt.Errorf("docker: %w", err)
 			}
-			return fmt.Errorf("bootstrap: %w", err)
+			log("-----> " + msgLang(lang, "joblog.installingDocker", tag))
+			step("install")
+			if err := dokku.RunDokkuContainer(ctx, o.client.Runner, tag, log); err != nil {
+				return err
+			}
+		} else {
+			log("-----> " + msgLang(lang, "joblog.installing", tag))
+			step("install")
+			if err := dokku.Bootstrap(ctx, tag, o.dir, log); err != nil {
+				var dl *dokku.DownloadError
+				if errors.As(err, &dl) {
+					return errors.New(errMsg(lang, err))
+				}
+				return fmt.Errorf("bootstrap: %w", err)
+			}
 		}
+		// O modo (host ou container) é detectado de novo com o Dokku no ar.
+		o.client.ResetMode()
 		step("verify")
 		v, err := o.client.Version(ctx)
 		if err != nil {

@@ -19,23 +19,32 @@ func TestParseVersion(t *testing.T) {
 
 func TestHostInfo(t *testing.T) {
 	ubuntu := func(v string) string { return "NAME=\"Ubuntu\"\nID=ubuntu\nVERSION_ID=\"" + v + "\"\n" }
+	fedora := "ID=fedora\nVERSION_ID=41\n"
 	cases := []struct {
 		name, goos, arch, rel string
 		euid                  int
+		force                 Mode
 		ok                    bool
+		method                string
 		reason, code, arg     string
 	}{
-		{"ubuntu 24.04 root", "linux", "amd64", ubuntu("24.04"), 0, true, "", "", ""},
-		{"ubuntu 20.04", "linux", "amd64", ubuntu("20.04"), 0, false, "ubuntu 20.04", "os", "ubuntu 20.04"},
-		{"debian 12 sem root", "linux", "arm64", "ID=debian\nVERSION_ID=\"12\"\n", 1000, false, "root", "root", ""},
-		{"darwin", "darwin", "arm64", "", 0, false, "darwin", "os", "darwin"},
-		{"arch 386", "linux", "386", ubuntu("22.04"), 0, false, "Arquitetura", "arch", "386"},
+		{"ubuntu 24.04 root", "linux", "amd64", ubuntu("24.04"), 0, ModeAuto, true, MethodBootstrap, "", "", ""},
+		{"ubuntu 20.04 vai de docker", "linux", "amd64", ubuntu("20.04"), 0, ModeAuto, true, MethodDocker, "", "", ""},
+		{"fedora vai de docker", "linux", "arm64", fedora, 0, ModeAuto, true, MethodDocker, "", "", ""},
+		{"ubuntu forçado docker", "linux", "arm64", ubuntu("24.04"), 0, ModeDocker, true, MethodDocker, "", "", ""},
+		{"fedora forçado host", "linux", "amd64", fedora, 0, ModeHost, true, MethodBootstrap, "", "", ""},
+		{"debian 12 sem root", "linux", "arm64", "ID=debian\nVERSION_ID=\"12\"\n", 1000, ModeAuto, false, MethodBootstrap, "root", "root", ""},
+		{"darwin", "darwin", "arm64", "", 0, ModeAuto, false, "", "darwin", "os", "darwin"},
+		{"arch 386", "linux", "386", ubuntu("22.04"), 0, ModeAuto, false, MethodBootstrap, "Arquitetura", "arch", "386"},
 	}
 	for _, c := range cases {
-		h := hostInfo(c.goos, c.arch, c.rel, c.euid)
-		if h.CanInstall != c.ok || !strings.Contains(h.Reason, c.reason) || h.ReasonCode != c.code || h.ReasonArg != c.arg {
+		h := hostInfo(c.goos, c.arch, c.rel, c.euid, c.force)
+		if h.CanInstall != c.ok || h.Method != c.method || !strings.Contains(h.Reason, c.reason) || h.ReasonCode != c.code || h.ReasonArg != c.arg {
 			t.Errorf("%s: %+v", c.name, h)
 		}
+	}
+	if h := hostInfo("linux", "amd64", "ID=rocky\nID_LIKE=\"rhel centos fedora\"\n", 0, ModeAuto); h.OSLike != "rhel centos fedora" {
+		t.Errorf("ID_LIKE: %+v", h)
 	}
 }
 

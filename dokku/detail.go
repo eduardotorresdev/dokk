@@ -337,7 +337,7 @@ func parseDetailContainers(out string, stats map[string]containerStats, app stri
 var buildID = regexp.MustCompile(`^[a-z0-9]+$`)
 
 func (c *Client) buildsDir(app string) string {
-	return filepath.Join(c.LibRoot, "data", "builds", app)
+	return filepath.Join(c.lib(), "data", "builds", app)
 }
 
 func (c *Client) readBuilds(app string) []Build {
@@ -381,8 +381,9 @@ func StripANSI(s string) string { return ansi.ReplaceAllString(s, "") }
 
 // StreamLogs roda `dokku logs <app> -t` e entrega cada linha até o contexto
 // acabar (o processo é morto junto).
-func StreamLogs(ctx context.Context, app string, tail int, line func(string)) error {
-	cmd := exec.CommandContext(ctx, "dokku", "logs", app, "-t", "-n", strconv.Itoa(tail))
+func (c *Client) StreamLogs(ctx context.Context, app string, tail int, line func(string)) error {
+	name, args := c.command(ctx, "dokku", "logs", app, "-t", "-n", strconv.Itoa(tail))
+	cmd := exec.CommandContext(ctx, name, args...)
 	// O dokku logs passa por sudo, bash e docker logs. Rodando num grupo de
 	// processos próprio dá pra matar todos ao desconectar; matar só o
 	// primeiro deixaria os filhos vivos para sempre.

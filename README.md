@@ -6,7 +6,7 @@
 
 <p align="center">
   A web panel for <a href="https://dokku.com">Dokku</a>, shipped as a single binary.<br>
-  Turn a fresh Ubuntu or Debian server into a Dokku PaaS and manage it from the browser.
+  Turn a fresh Linux server into a Dokku PaaS and manage it from the browser.
 </p>
 
 <p align="center">
@@ -16,8 +16,8 @@
 </p>
 
 <p align="center">
-  <a href="https://eduardotorresdev.github.io/dokk/">Website</a> ·
-  <a href="https://github.com/eduardotorresdev/dokk/releases">Releases</a> ·
+  <a href="https://eduardotorresdev.github.io/dokk/">Website</a> -
+  <a href="https://github.com/eduardotorresdev/dokk/releases">Releases</a> -
   <a href="https://dokku.com/docs/">Dokku docs</a>
 </p>
 
@@ -27,7 +27,7 @@
 
 dokk is one Go binary with the UI embedded. Run it on a server and you get:
 
-- **Guided onboarding.** Detects an existing Dokku install, or installs Dokku for you with the official `bootstrap.sh` (Docker, nginx, Dokku). Then sets the global domain, Let's Encrypt, and walks you to your first deploy.
+- **Guided onboarding.** Detects an existing Dokku install, or **installs Dokku for you**: on Ubuntu and Debian with the official `bootstrap.sh` (Docker, nginx, Dokku), on any other distro with Docker and the official Dokku container. Then sets the global domain, Let's Encrypt, and walks you to your first deploy.
 - **Live dashboard.** All apps with status, processes and resource share, streamed over SSE. Host CPU, memory and disk.
 - **App detail.** Streaming logs, build logs, deploy history, published tags, env vars, ports, linked services. Start, stop, restart, rename, remove with progress.
 - **Deploy from Docker images.** Public images directly, private ones after a registry login (Docker Hub, GHCR, GitLab, self-hosted). Install any published tag from the Versions tab.
@@ -41,7 +41,7 @@ Deploy methods other than Docker image (git push, Dockerfile, buildpacks) are co
 
 ## Quick install
 
-On a fresh Ubuntu or Debian server, as root:
+On a fresh Linux server, as root:
 
 ```sh
 curl -fsSL https://eduardotorresdev.github.io/dokk/install.sh | sudo sh
@@ -88,15 +88,25 @@ sudo install -m 0755 dokk /usr/local/bin/dokk
 
 ### Supported distributions
 
-dokk itself runs on any Linux that has Dokku. Installing Dokku *from* dokk requires a distro supported by Dokku's official installer.
+dokk is a static binary and runs on **any Linux, amd64 or arm64**. It also installs Dokku on any distro; only the method differs.
 
-| Distribution | Versions | Arch | dokk installs Dokku | Uses existing Dokku |
-| --- | --- | --- | :-: | :-: |
-| Ubuntu | 22.04, 24.04, 26.04 | amd64, arm64 | Yes | Yes |
-| Debian | 11, 12, 13 | amd64, arm64 | Yes | Yes |
-| Fedora, Rocky, Alma, RHEL, Arch, Amazon Linux, others | any | amd64, arm64 | No (not supported by Dokku's installer) | Yes |
+| Distribution | Arch | dokk installs Dokku | How | Uses existing Dokku |
+| --- | --- | :-: | --- | :-: |
+| Ubuntu 22.04 / 24.04 / 26.04 | amd64, arm64 | Yes | Official `bootstrap.sh` (apt, Docker, nginx, Dokku) | Yes |
+| Debian 11 / 12 / 13 | amd64, arm64 | Yes | Official `bootstrap.sh` | Yes |
+| Fedora, RHEL, Rocky, Alma, Arch, openSUSE, Amazon Linux, others | amd64, arm64 | Yes | Docker (installed if missing) + official Dokku container | Yes |
 
-For a new server, use Ubuntu or Debian.
+## What happens after you install
+
+1. **The installer does its job.** Detects your architecture, downloads the latest release, verifies the sha256 against `checksums.txt`, installs `/usr/local/bin/dokk` and starts the `dokk` systemd service.
+2. **Open the panel.** It listens on `127.0.0.1:7070` by default: `ssh -L 7070:127.0.0.1:7070 root@SERVER`, then <http://localhost:7070>.
+3. **First run: create superuser.** Name, email, password. This account manages the panel and can only be created once (or set `DOKK_USER` / `DOKK_PASSWORD`).
+4. **Setup 1/6, Dokku.** The onboarding looks for Dokku on the server. If it's there, it shows the version and reuses it. If not, **dokk installs Dokku for you**: one click runs the official installer (`bootstrap.sh` on Ubuntu/Debian, Docker + official Dokku container elsewhere) and streams the log. Steps shown: *Fetching the latest version*, *Installing Dokku*, *Verifying the installation*.
+5. **Setup 2/6, Configuration.** Global domain (apps live at `app.your-domain`; `ip.sslip.io` works with no DNS) and an email to enable Let's Encrypt with auto-renewal.
+6. **Setup 3/6, Deploy method.** Docker image today; git push, Dockerfile and buildpacks are coming soon.
+7. **Setup 4/6, Docker image.** Image and tag (e.g. `ghcr.io/user/app:1.0.0`). For private images pick the provider (Docker Hub, GHCR, GitLab, other) and sign in; credentials go to `dokku registry:login` and never return to the browser.
+8. **Setup 5/6, App.** Name, container port, environment variables (paste a whole `.env` into any field), HTTPS on/off. *Create app and deploy*.
+9. **Setup 6/6, Deploy.** Phases *Pulling image*, *Preparing build*, *Starting container*, *Health checks*, *Live*, with the build log. Then *Your app is live* and a button to open it.
 
 ## First steps
 
@@ -109,7 +119,7 @@ For a new server, use Ubuntu or Debian.
    then visit <http://localhost:7070>. If you installed with `DOKK_ADDR=0.0.0.0:7070`, open `http://SERVER:7070` directly (see [Security](#security)).
 
 2. Create the superuser on the first-run page.
-3. Follow the onboarding: install or detect Dokku, set the global domain (a wildcard DNS record, or `<ip>.sslip.io` with no DNS at all), optionally an email for Let's Encrypt.
+3. Follow the onboarding: detect Dokku or let dokk install it, set the global domain (a wildcard DNS record, or `<ip>.sslip.io` with no DNS at all), optionally an email for Let's Encrypt.
 4. Create your first app: Docker image, environment variables (paste a whole `.env` into any field), container port, domain and HTTPS. Watch the deploy until it's live.
 
 ## Configuration
@@ -122,6 +132,7 @@ For a new server, use Ubuntu or Debian.
 | `-data` | `/var/lib/dokk` | Data directory (superuser, sessions, preferences). |
 | `-interval` | `5s` | Interval between status checks. |
 | `-dokku-tag` | *(empty = latest)* | Dokku version the onboarding installs. |
+| `-dokku-mode` | `auto` | How Dokku runs: `host` (bootstrap.sh), `docker` (official `dokku/dokku` container) or `auto` (bootstrap on supported Ubuntu/Debian, container elsewhere). Also `DOKK_DOKKU_MODE`. |
 | `-version` | | Print the version and exit. |
 
 ### Environment

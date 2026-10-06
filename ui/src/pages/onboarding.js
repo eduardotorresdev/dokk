@@ -102,7 +102,7 @@ const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/
 const enc = encodeURIComponent
 
 // Passos das tarefas (Job.step) que o servidor manda como código.
-const JOB_STEPS = ["fetch-latest", "install", "verify", "domain", "ssh-key", "letsencrypt-plugin", "letsencrypt"]
+const JOB_STEPS = ["fetch-latest", "docker", "install", "verify", "domain", "ssh-key", "letsencrypt-plugin", "letsencrypt"]
 const jobStep = (code) => !code ? tr("onboarding.job.preparing") : JOB_STEPS.includes(code) ? tr(`onboarding.job.step.${code}`) : code
 
 // Erros guardados para mostrar depois: texto do servidor (string, já
@@ -463,7 +463,7 @@ export function onboarding() {
         }
         return t.div({ className: "wizard-card" },
             t.h2({ textContent: () => tr("onboarding.dokku.install.title") }),
-            t.p({ textContent: () => tr("onboarding.dokku.install.text") }),
+            t.p({ textContent: () => tr(host.method === "docker" ? "onboarding.dokku.install.textDocker" : "onboarding.dokku.install.text") }),
             t.p({ className: "muted mono", textContent: `${host.os} ${host["os-version"]} · ${host.arch}` }),
             t.p({ className: "form-error", role: "alert", hidden: () => !data.error, textContent: () => errText(data.error) }),
             t.div({ className: "wizard-actions" },

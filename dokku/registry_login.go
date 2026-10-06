@@ -50,7 +50,7 @@ func ValidRegistryPassword(p string) bool {
 // ordenados por servidor. Sem arquivo: lista vazia, sem erro.
 func (c *Client) Registries() ([]Registry, error) {
 	out := []Registry{}
-	b, err := os.ReadFile(c.HomeRoot + "/.docker/config.json")
+	b, err := os.ReadFile(c.home() + "/.docker/config.json")
 	if errors.Is(err, os.ErrNotExist) {
 		return out, nil
 	}

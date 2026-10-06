@@ -91,7 +91,7 @@ func (c *Client) RenewSSL(ctx context.Context, app string) error {
 // O plugin só tem a opção global (vale para todas as apps), marcada por este
 // arquivo.
 func (c *Client) SSLAutoRenew() bool {
-	_, err := os.Stat(filepath.Join(c.LibRoot, "data", "letsencrypt", "--global", "autorenew"))
+	_, err := os.Stat(filepath.Join(c.lib(), "data", "letsencrypt", "--global", "autorenew"))
 	return err == nil
 }
 

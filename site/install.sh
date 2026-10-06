@@ -16,7 +16,6 @@ UNIT="/etc/systemd/system/dokk.service"
 ADDR="${DOKK_ADDR:-127.0.0.1:7070}"
 
 say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ "$(uname -s)" = "Linux" ] || die "dokk runs on Linux only."
@@ -27,16 +26,6 @@ case "$(uname -m)" in
   aarch64 | arm64) ARCH=arm64 ;;
   *) die "unsupported architecture: $(uname -m) (amd64 and arm64 only)" ;;
 esac
-
-# Dokku itself (which dokk can install for you) only supports Ubuntu/Debian.
-if [ -r /etc/os-release ]; then
-  # shellcheck disable=SC1091
-  . /etc/os-release
-  case "${ID:-}" in
-    ubuntu | debian) ;;
-    *) warn "${PRETTY_NAME:-this distro} is not supported by the Dokku installer. dokk will run, but needs an existing Dokku. Use Ubuntu or Debian for a new server." ;;
-  esac
-fi
 
 if command -v curl >/dev/null 2>&1; then
   fetch() { curl -fsSL "$1" -o "$2"; }

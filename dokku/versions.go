@@ -25,15 +25,20 @@ const maxVersions = 30
 func (c *Client) Versions(ctx context.Context, app, current string) ([]Version, error) {
 	// O repositório é do usuário dokku; safe.directory evita a recusa do git
 	// por "dubious ownership" rodando como root.
-	git := []string{"-c", "safe.directory=*", "-C", filepath.Join(c.HomeRoot, app)}
-	out, err := c.Runner.Run(ctx, "git", append(git, "log", "-n", "30", "--format=%x00%H%x1f%cI%x1f%an%x1f%s")...)
+	// No modo docker o git roda dentro do container (o host pode nem ter
+	// git), com o caminho de lá.
+	git := func(args ...string) (string, error) {
+		name, argv := c.command(ctx, append([]string{"git", "-c", "safe.directory=*", "-C", filepath.Join(c.HomeRoot, app)}, args...)...)
+		return c.Runner.Run(ctx, name, argv...)
+	}
+	out, err := git("log", "-n", "30", "--format=%x00%H%x1f%cI%x1f%an%x1f%s")
 	if err != nil {
 		// Sem repositório (app nunca recebeu deploy): sem versões.
 		return []Version{}, nil
 	}
 	// Só o diff do Dockerfile, para achar a imagem de cada deploy por imagem
 	// sem ler o diff inteiro de apps com deploy por git push.
-	images, _ := c.Runner.Run(ctx, "git", append(git, "log", "-n", "30", "--format=%x00%H%x1f%cI%x1f%an%x1f%s", "-p", "--no-color", "-U0", "--", "Dockerfile")...)
+	images, _ := git("log", "-n", "30", "--format=%x00%H%x1f%cI%x1f%an%x1f%s", "-p", "--no-color", "-U0", "--", "Dockerfile")
 	return parseVersions(out, images, current), nil
 }
 
