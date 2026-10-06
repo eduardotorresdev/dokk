@@ -56,8 +56,8 @@
 }
 
 * { box-sizing: border-box; min-width: 0; }
-html { scroll-behavior: smooth; overflow-x: hidden; }
-body { margin: 0; font-family: var(--font); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow-x: hidden; }
+html { scroll-behavior: smooth; overflow-x: clip; }
+body { margin: 0; font-family: var(--font); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow-x: clip; }
 a { color: inherit; text-decoration: none; }
 p a, li a, .credit-link { color: var(--accent-ink); }
 p a, li a { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); }
@@ -139,19 +139,19 @@ section { padding: 96px 0; }
 @keyframes settle { from { transform: rotateX(9deg) translateY(16px); opacity: 0; } to { transform: rotateX(3deg) translateY(0); opacity: 1; } }
 
 /* ---------- after install: step by step ---------- */
-.after { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.after { overflow: visible; background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .after-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 48px; margin-top: 48px; align-items: start; }
-.after-grid .sticky { position: sticky; top: 84px; }
+.after-grid .sticky { position: sticky; top: 80px; align-self: start; }
 @media (max-width: 900px) { .after-grid { grid-template-columns: 1fr; gap: 32px; } .after-grid .sticky { position: static; } }
 .timeline { list-style: none; margin: 0; padding: 0; position: relative; }
 .timeline::before { content: ""; position: absolute; left: 19px; top: 24px; bottom: 24px; width: 2px; background: linear-gradient(var(--accent), color-mix(in srgb, var(--accent) 20%, transparent)); }
-.tl { position: relative; padding: 0 0 26px 58px; }
+.tl { position: relative; padding: 0 0 22px 58px; }
 .tl:last-child { padding-bottom: 0; }
 .tl .n { position: absolute; left: 0; top: 0; width: 40px; height: 40px; border-radius: 50%; background: var(--card); border: 2px solid var(--accent); color: var(--accent-ink); display: grid; place-items: center; font: 600 13px var(--mono); box-shadow: var(--shadow); }
 .tl.big .n { background: var(--accent); color: #fff; }
 .tl h3 { font-size: 18px; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .tl h3 .tag { font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; padding: 3px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
-.tl p { margin: 0; color: var(--muted); font-size: 15px; }
+.tl p { margin: 0; color: var(--muted); font-size: 14.5px; }
 .tl pre { margin: 12px 0 0; background: var(--ink); color: var(--ink-fg); font-size: 12.5px; padding: 12px 14px; border-radius: 10px; overflow-x: auto; white-space: pre; line-height: 1.55; }
 .tl pre .p { color: var(--ink-muted); } .tl pre .ok { color: #9fd3a6; } .tl pre .c { color: #8db0ff; }
 .tl .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
@@ -358,59 +358,30 @@ footer nav { display: flex; gap: 18px; flex-wrap: wrap; } footer nav a:hover { c
           <h3 data-i18n="s1.h"></h3>
           <p data-i18n="s1.p"></p>
           <pre><span class="p">$</span> curl -fsSL …/install.sh | sudo sh
-<span class="ok">✓</span> dokk v0.1.0 (linux/arm64)
-<span class="ok">✓</span> sha256 <span class="c">checksums.txt</span> ok
-<span class="ok">✓</span> /usr/local/bin/dokk
-<span class="ok">✓</span> systemd: dokk.service active
-<span class="p">→</span> http://127.0.0.1:7070</pre>
+<span class="ok">✓</span> dokk v0.1.0 (linux/arm64) <span class="p">sha256 ok</span>
+<span class="ok">✓</span> systemd: dokk.service active <span class="p">→ :7070</span></pre>
         </li>
         <li class="tl">
           <div class="n">2</div>
-          <h3 data-i18n="s2.h"></h3>
+          <h3><span data-i18n="s2.h"></span> <span class="tag" data-i18n="s2.tag"></span></h3>
           <p data-i18n="s2.p"></p>
-          <pre><span class="p">$</span> ssh -L 7070:127.0.0.1:7070 root@SERVER
-<span class="p">→</span> http://localhost:7070</pre>
-        </li>
-        <li class="tl">
-          <div class="n">3</div>
-          <h3><span data-i18n="s3.h"></span> <span class="tag" data-i18n="s3.tag"></span></h3>
-          <p data-i18n="s3.p"></p>
         </li>
         <li class="tl big">
+          <div class="n">3</div>
+          <h3><span data-i18n="s3.h"></span> <span class="tag" data-i18n="s3.tag"></span></h3>
+          <div class="callout" data-i18n="s3.callout"></div>
+          <div class="chips"><span data-i18n="s3.c1"></span><span data-i18n="s3.c2"></span><span data-i18n="s3.c3"></span></div>
+        </li>
+        <li class="tl">
           <div class="n">4</div>
           <h3><span data-i18n="s4.h"></span> <span class="tag" data-i18n="s4.tag"></span></h3>
           <p data-i18n="s4.p"></p>
-          <div class="callout" data-i18n="s4.callout"></div>
-          <div class="chips">
-            <span data-i18n="s4.c1"></span><span data-i18n="s4.c2"></span><span data-i18n="s4.c3"></span>
-          </div>
         </li>
         <li class="tl">
           <div class="n">5</div>
           <h3><span data-i18n="s5.h"></span> <span class="tag" data-i18n="s5.tag"></span></h3>
           <p data-i18n="s5.p"></p>
-        </li>
-        <li class="tl">
-          <div class="n">6</div>
-          <h3><span data-i18n="s6.h"></span> <span class="tag" data-i18n="s6.tag"></span></h3>
-          <p data-i18n="s6.p"></p>
-          <div class="chips"><span data-i18n="s6.c1"></span><span class="dim">Git push</span><span class="dim">Dockerfile</span><span class="dim">Buildpacks</span></div>
-        </li>
-        <li class="tl">
-          <div class="n">7</div>
-          <h3><span data-i18n="s7.h"></span> <span class="tag" data-i18n="s7.tag"></span></h3>
-          <p data-i18n="s7.p"></p>
-        </li>
-        <li class="tl">
-          <div class="n">8</div>
-          <h3><span data-i18n="s8.h"></span> <span class="tag" data-i18n="s8.tag"></span></h3>
-          <p data-i18n="s8.p"></p>
-        </li>
-        <li class="tl">
-          <div class="n">9</div>
-          <h3><span data-i18n="s9.h"></span> <span class="tag" data-i18n="s9.tag"></span></h3>
-          <p data-i18n="s9.p"></p>
-          <div class="chips"><span data-i18n="s9.c1"></span><span data-i18n="s9.c2"></span><span data-i18n="s9.c3"></span><span data-i18n="s9.c4"></span><span data-i18n="s9.c5"></span></div>
+          <div class="chips"><span data-i18n="s5.c1"></span><span data-i18n="s5.c2"></span><span data-i18n="s5.c3"></span><span data-i18n="s5.c4"></span></div>
         </li>
       </ol>
     </div>
@@ -606,24 +577,20 @@ footer nav { display: flex; gap: 18px; flex-wrap: wrap; } footer nav a:hover { c
     "nav.after": "After install", "nav.features": "Features", "nav.req": "Requirements", "nav.faq": "FAQ",
     "copy": "Copy", "copied": "Copied", "frame.live": "LIVE DEMO", "frame.autoplay": "AUTOPLAY", "frame.loading": "loading demo",
     "hero.pill": "Open source - MIT - single Go binary",
-    "hero.h1": "A fresh server to a <em>Dokku PaaS</em>, with one binary.",
+    "hero.h1": "From server to a <em>Dokku PaaS</em>, with one binary.",
     "hero.lead": "dokk is a web panel for <a href=\"https://dokku.com\">Dokku</a>. It installs Dokku for you, walks you through your first deploy, and then stays around as the dashboard: apps, logs, releases, host metrics. No other dependencies to prepare.",
     "hero.m1": "Any Linux distro", "hero.m3": "sha256-verified", "hero.m4": "systemd service",
     "hero.releases": "Releases", "hero.docs": "Read the docs",
     "after.eyebrow": "After install", "after.title": "What happens right after you run that line.",
-    "after.lead": "Nine steps, most of them a click. The demo on the left plays the real onboarding, the list on the right is what you'll see.",
-    "s1.h": "The installer does its job", "s1.p": "Detects your architecture, downloads the latest release from GitHub, verifies the sha256 against <code>checksums.txt</code>, installs to <code>/usr/local/bin/dokk</code> and starts a <code>dokk</code> systemd service.",
-    "s2.h": "Open the panel", "s2.p": "dokk listens on <code>127.0.0.1:7070</code> by default. An SSH tunnel is the quickest, safest way in.",
-    "s3.h": "Create superuser", "s3.tag": "First run", "s3.p": "The first page asks for a name, email and password. This account manages the panel and can only be created once. Prefer env? Set <code>DOKK_USER</code> and <code>DOKK_PASSWORD</code> instead.",
-    "s4.h": "Dokku", "s4.tag": "Setup 1/6", "s4.p": "The onboarding looks for Dokku on the server. Found it? It shows the version and reuses the install. Not there?",
-    "s4.callout": "<b>dokk installs Dokku for you.</b> One click runs the official installer: on Ubuntu and Debian via Dokku's <code>bootstrap.sh</code> (apt, Docker, nginx, Dokku); on any other distro via Docker and the official Dokku container. You watch the log live. It takes a few minutes.",
-    "s4.c1": "Fetching the latest version", "s4.c2": "Installing Dokku", "s4.c3": "Verifying the installation",
-    "s5.h": "Configuration", "s5.tag": "Setup 2/6", "s5.p": "Global domain (apps live at <code>app.your-domain</code>, or use <code>ip.sslip.io</code> with zero DNS) and an email to turn on Let's Encrypt with automatic renewal.",
-    "s6.h": "Deploy method", "s6.tag": "Setup 3/6", "s6.p": "How your app gets to the server. Today: a prebuilt Docker image. The rest is coming soon.", "s6.c1": "Docker image",
-    "s7.h": "Docker image", "s7.tag": "Setup 4/6", "s7.p": "Image and tag, e.g. <code>ghcr.io/user/app:1.0.0</code>. Private? Pick the provider (Docker Hub, GHCR, GitLab, other) and sign in. Credentials go to <code>dokku registry:login</code> on the server and never come back to the browser.",
-    "s8.h": "App", "s8.tag": "Setup 5/6", "s8.p": "Name, container port, environment variables (paste a whole <code>.env</code> into any field) and HTTPS on or off. Then <b>Create app and deploy</b>.",
-    "s9.h": "Deploy", "s9.tag": "Setup 6/6", "s9.p": "dokk registers the app and deploys the image while you watch every phase and the build log. Then: <b>Your app is live</b>, with a button to open it.",
-    "s9.c1": "Pulling image", "s9.c2": "Preparing build", "s9.c3": "Starting container", "s9.c4": "Health checks", "s9.c5": "Live",
+    "after.lead": "Five steps, most of them a click. The demo plays the real onboarding; the list is what you'll see.",
+    "s1.h": "Install the binary", "s1.p": "Detects your arch, downloads the latest release, verifies the sha256, installs <code>/usr/local/bin/dokk</code> and starts the <code>dokk</code> systemd service.",
+    "s2.h": "Open the panel, create the superuser", "s2.tag": "First run", "s2.p": "<code>ssh -L 7070:127.0.0.1:7070 root@SERVER</code>, then <code>http://localhost:7070</code>. The first page asks for name, email and password (or set <code>DOKK_USER</code> / <code>DOKK_PASSWORD</code>).",
+    "s3.h": "dokk installs Dokku", "s3.tag": "Setup 1/6",
+    "s3.callout": "<b>Dokku not on the server? dokk installs it for you.</b> One click runs the official installer: <code>bootstrap.sh</code> on Ubuntu and Debian, Docker plus the official Dokku container on any other distro. You watch the log live; it takes a few minutes. Already have Dokku? It's detected and reused.",
+    "s3.c1": "Fetching the latest version", "s3.c2": "Installing Dokku", "s3.c3": "Verifying the installation",
+    "s4.h": "Image, registry, app", "s4.tag": "Setup 2-5/6", "s4.p": "Global domain and Let's Encrypt email. Image and tag, e.g. <code>ghcr.io/user/app:1.0.0</code>; private? sign in to Docker Hub, GHCR, GitLab or another registry. Then name, port, env vars (paste a whole <code>.env</code>) and HTTPS. <b>Create app and deploy</b>.",
+    "s5.h": "Live deploy", "s5.tag": "Setup 6/6", "s5.p": "Every phase and the build log, streamed. Then <b>Your app is live</b>, with a button to open it.",
+    "s5.c1": "Pulling image", "s5.c2": "Starting container", "s5.c3": "Health checks", "s5.c4": "Live",
     "feat.eyebrow": "Features", "feat.title": "Everything you'd otherwise do over SSH.", "feat.lead": "dokk doesn't replace Dokku. It drives it, with the same commands you'd type, and shows you what's happening.",
     "feat.a.cap": "App detail - real UI", "feat.b.t": "Live, not polled.", "feat.b.p": "Status, processes and resource share of every app pushed over server-sent events. Nothing to refresh.",
     "feat.c.h": "Streaming logs", "feat.c.p": "Follow, pause, clear. Build log per deploy, deploy history, releases.",
@@ -659,24 +626,20 @@ footer nav { display: flex; gap: 18px; flex-wrap: wrap; } footer nav a:hover { c
     "nav.after": "Tras instalar", "nav.features": "Funciones", "nav.req": "Requisitos", "nav.faq": "FAQ",
     "copy": "Copiar", "copied": "Copiado", "frame.live": "DEMO EN VIVO", "frame.autoplay": "AUTOPLAY", "frame.loading": "cargando demo",
     "hero.pill": "Código abierto - MIT - un solo binario en Go",
-    "hero.h1": "De servidor recién creado a <em>PaaS con Dokku</em>, con un solo binario.",
+    "hero.h1": "Del servidor a un <em>PaaS con Dokku</em>, con un solo binario.",
     "hero.lead": "dokk es un panel web para <a href=\"https://dokku.com\">Dokku</a>. Instala Dokku por ti, te acompaña en el primer deploy y después se queda como tu dashboard: apps, logs, versiones, métricas del servidor. No hay nada más que preparar.",
     "hero.m1": "Cualquier distro Linux", "hero.m3": "verificado con sha256", "hero.m4": "servicio systemd",
     "hero.releases": "Releases", "hero.docs": "Leer la documentación",
     "after.eyebrow": "Tras instalar", "after.title": "Qué pasa justo después de ejecutar esa línea.",
-    "after.lead": "Nueve pasos, casi todos de un clic. La demo de la izquierda reproduce el onboarding real; la lista de la derecha es lo que vas a ver.",
-    "s1.h": "El instalador hace su trabajo", "s1.p": "Detecta la arquitectura, descarga la última release de GitHub, verifica el sha256 contra <code>checksums.txt</code>, instala en <code>/usr/local/bin/dokk</code> y arranca el servicio systemd <code>dokk</code>.",
-    "s2.h": "Abre el panel", "s2.p": "Por defecto dokk escucha en <code>127.0.0.1:7070</code>. Un túnel SSH es la forma más rápida y segura de entrar.",
-    "s3.h": "Crear superusuario", "s3.tag": "Primera ejecución", "s3.p": "La primera pantalla pide nombre, email y contraseña. Esta cuenta administra el panel y solo se crea una vez. ¿Prefieres variables de entorno? Usa <code>DOKK_USER</code> y <code>DOKK_PASSWORD</code>.",
-    "s4.h": "Dokku", "s4.tag": "Setup 1/6", "s4.p": "El onboarding busca Dokku en el servidor. ¿Está? Muestra la versión y reutiliza la instalación. ¿No está?",
-    "s4.callout": "<b>dokk instala Dokku por ti.</b> Un clic ejecuta el instalador oficial: en Ubuntu y Debian con el <code>bootstrap.sh</code> de Dokku (apt, Docker, nginx, Dokku); en cualquier otra distro con Docker y el contenedor oficial de Dokku. Ves el log en vivo. Tarda unos minutos.",
-    "s4.c1": "Obteniendo la última versión", "s4.c2": "Instalando Dokku", "s4.c3": "Verificando la instalación",
-    "s5.h": "Configuración", "s5.tag": "Setup 2/6", "s5.p": "Dominio global (las apps viven en <code>app.tu-dominio</code>, o usa <code>ip.sslip.io</code> sin tocar DNS) y un email para activar Let's Encrypt con renovación automática.",
-    "s6.h": "Método de deploy", "s6.tag": "Setup 3/6", "s6.p": "Cómo llega tu app al servidor. Hoy: una imagen Docker ya construida. El resto, próximamente.", "s6.c1": "Imagen Docker",
-    "s7.h": "Imagen Docker", "s7.tag": "Setup 4/6", "s7.p": "Imagen y tag, p. ej. <code>ghcr.io/user/app:1.0.0</code>. ¿Es privada? Elige el proveedor (Docker Hub, GHCR, GitLab, otro) e inicia sesión. Las credenciales van a <code>dokku registry:login</code> en el servidor y nunca vuelven al navegador.",
-    "s8.h": "App", "s8.tag": "Setup 5/6", "s8.p": "Nombre, puerto del contenedor, variables de entorno (pega un <code>.env</code> entero en cualquier campo) y HTTPS sí o no. Luego <b>Crear app y desplegar</b>.",
-    "s9.h": "Deploy", "s9.tag": "Setup 6/6", "s9.p": "dokk registra la app y despliega la imagen mientras ves cada fase y el log del build. Al final: <b>Tu app está en línea</b>, con un botón para abrirla.",
-    "s9.c1": "Descargando la imagen", "s9.c2": "Preparando el build", "s9.c3": "Iniciando el contenedor", "s9.c4": "Health checks", "s9.c5": "En línea",
+    "after.lead": "Cinco pasos, casi todos de un clic. La demo reproduce el onboarding real; la lista es lo que vas a ver.",
+    "s1.h": "Instala el binario", "s1.p": "Detecta la arquitectura, descarga la última release, verifica el sha256, instala <code>/usr/local/bin/dokk</code> y arranca el servicio systemd <code>dokk</code>.",
+    "s2.h": "Abre el panel y crea el superusuario", "s2.tag": "Primera ejecución", "s2.p": "<code>ssh -L 7070:127.0.0.1:7070 root@SERVIDOR</code> y luego <code>http://localhost:7070</code>. La primera pantalla pide nombre, email y contraseña (o usa <code>DOKK_USER</code> / <code>DOKK_PASSWORD</code>).",
+    "s3.h": "dokk instala Dokku", "s3.tag": "Setup 1/6",
+    "s3.callout": "<b>¿No hay Dokku en el servidor? dokk lo instala por ti.</b> Un clic ejecuta el instalador oficial: <code>bootstrap.sh</code> en Ubuntu y Debian, Docker más el contenedor oficial de Dokku en cualquier otra distro. Ves el log en vivo; tarda unos minutos. ¿Ya tienes Dokku? Se detecta y se reutiliza.",
+    "s3.c1": "Obteniendo la última versión", "s3.c2": "Instalando Dokku", "s3.c3": "Verificando la instalación",
+    "s4.h": "Imagen, registry, app", "s4.tag": "Setup 2-5/6", "s4.p": "Dominio global y email para Let's Encrypt. Imagen y tag, p. ej. <code>ghcr.io/user/app:1.0.0</code>; ¿privada? inicia sesión en Docker Hub, GHCR, GitLab u otro registry. Luego nombre, puerto, variables (pega un <code>.env</code> entero) y HTTPS. <b>Crear app y desplegar</b>.",
+    "s5.h": "Deploy en vivo", "s5.tag": "Setup 6/6", "s5.p": "Cada fase y el log del build, en streaming. Al final, <b>Tu app está en línea</b>, con un botón para abrirla.",
+    "s5.c1": "Descargando la imagen", "s5.c2": "Iniciando el contenedor", "s5.c3": "Health checks", "s5.c4": "En línea",
     "feat.eyebrow": "Funciones", "feat.title": "Todo lo que harías por SSH.", "feat.lead": "dokk no sustituye a Dokku. Lo maneja, con los mismos comandos que escribirías, y te enseña lo que está pasando.",
     "feat.a.cap": "Detalle de app - UI real", "feat.b.t": "En vivo, sin recargar.", "feat.b.p": "Estado, procesos y consumo de cada app llegan por server-sent events. No hay que refrescar nada.",
     "feat.c.h": "Logs en streaming", "feat.c.p": "Seguir, pausar, limpiar. Log de build por deploy, historial de deploys, versiones.",
@@ -712,24 +675,20 @@ footer nav { display: flex; gap: 18px; flex-wrap: wrap; } footer nav a:hover { c
     "nav.after": "Depois de instalar", "nav.features": "Recursos", "nav.req": "Requisitos", "nav.faq": "FAQ",
     "copy": "Copiar", "copied": "Copiado", "frame.live": "DEMO AO VIVO", "frame.autoplay": "AUTOPLAY", "frame.loading": "carregando demo",
     "hero.pill": "Código aberto - MIT - um único binário em Go",
-    "hero.h1": "De servidor zerado a <em>PaaS com Dokku</em>, com um único binário.",
+    "hero.h1": "Do servidor à <em>PaaS com Dokku</em>, com um único binário.",
     "hero.lead": "dokk é um painel web para o <a href=\"https://dokku.com\">Dokku</a>. Ele instala o Dokku pra você, te guia no primeiro deploy e depois fica como seu dashboard: apps, logs, versões, métricas do servidor. Não tem mais nada pra preparar.",
     "hero.m1": "Qualquer distro Linux", "hero.m3": "verificado com sha256", "hero.m4": "serviço systemd",
     "hero.releases": "Releases", "hero.docs": "Ler a documentação",
     "after.eyebrow": "Depois de instalar", "after.title": "O que acontece logo depois de rodar essa linha.",
-    "after.lead": "Nove passos, quase todos de um clique. A demo à esquerda roda o onboarding de verdade; a lista à direita é o que você vai ver.",
-    "s1.h": "O instalador faz a parte dele", "s1.p": "Detecta a arquitetura, baixa a release mais recente do GitHub, confere o sha256 com o <code>checksums.txt</code>, instala em <code>/usr/local/bin/dokk</code> e sobe o serviço systemd <code>dokk</code>.",
-    "s2.h": "Abra o painel", "s2.p": "Por padrão o dokk escuta em <code>127.0.0.1:7070</code>. Um túnel SSH é o jeito mais rápido e seguro de entrar.",
-    "s3.h": "Criar superusuário", "s3.tag": "Primeira execução", "s3.p": "A primeira tela pede nome, email e senha. Essa conta administra o painel e só pode ser criada uma vez. Prefere variáveis de ambiente? Use <code>DOKK_USER</code> e <code>DOKK_PASSWORD</code>.",
-    "s4.h": "Dokku", "s4.tag": "Setup 1/6", "s4.p": "O onboarding procura o Dokku no servidor. Achou? Mostra a versão e reaproveita a instalação. Não achou?",
-    "s4.callout": "<b>O dokk instala o Dokku pra você.</b> Um clique roda o instalador oficial: no Ubuntu e no Debian com o <code>bootstrap.sh</code> do Dokku (apt, Docker, nginx, Dokku); em qualquer outra distro com Docker e o container oficial do Dokku. Você acompanha o log ao vivo. Leva alguns minutos.",
-    "s4.c1": "Buscando a versão mais recente", "s4.c2": "Instalando o Dokku", "s4.c3": "Verificando a instalação",
-    "s5.h": "Configuração", "s5.tag": "Setup 2/6", "s5.p": "Domínio global (as apps ficam em <code>app.seu-dominio</code>, ou use <code>ip.sslip.io</code> sem mexer em DNS) e um email pra ligar o Let's Encrypt com renovação automática.",
-    "s6.h": "Método de deploy", "s6.tag": "Setup 3/6", "s6.p": "Como a sua app chega ao servidor. Hoje: uma imagem Docker já construída. O resto vem em breve.", "s6.c1": "Imagem Docker",
-    "s7.h": "Imagem Docker", "s7.tag": "Setup 4/6", "s7.p": "Imagem e tag, ex. <code>ghcr.io/user/app:1.0.0</code>. É privada? Escolha o provedor (Docker Hub, GHCR, GitLab, outro) e faça login. As credenciais vão pro <code>dokku registry:login</code> no servidor e nunca voltam pro navegador.",
-    "s8.h": "App", "s8.tag": "Setup 5/6", "s8.p": "Nome, porta do container, variáveis de ambiente (cole um <code>.env</code> inteiro em qualquer campo) e HTTPS ligado ou não. Depois, <b>Criar app e fazer deploy</b>.",
-    "s9.h": "Deploy", "s9.tag": "Setup 6/6", "s9.p": "O dokk registra a app e faz o deploy da imagem enquanto você acompanha cada fase e o log do build. No fim: <b>Sua app está no ar</b>, com um botão pra abrir.",
-    "s9.c1": "Baixando a imagem", "s9.c2": "Preparando o build", "s9.c3": "Iniciando o container", "s9.c4": "Health checks", "s9.c5": "No ar",
+    "after.lead": "Cinco passos, quase todos de um clique. A demo roda o onboarding de verdade; a lista é o que você vai ver.",
+    "s1.h": "Instale o binário", "s1.p": "Detecta a arquitetura, baixa a release mais recente, confere o sha256, instala <code>/usr/local/bin/dokk</code> e sobe o serviço systemd <code>dokk</code>.",
+    "s2.h": "Abra o painel e crie o superusuário", "s2.tag": "Primeira execução", "s2.p": "<code>ssh -L 7070:127.0.0.1:7070 root@SERVIDOR</code> e depois <code>http://localhost:7070</code>. A primeira tela pede nome, email e senha (ou use <code>DOKK_USER</code> / <code>DOKK_PASSWORD</code>).",
+    "s3.h": "O dokk instala o Dokku", "s3.tag": "Setup 1/6",
+    "s3.callout": "<b>Não tem Dokku no servidor? O dokk instala pra você.</b> Um clique roda o instalador oficial: <code>bootstrap.sh</code> no Ubuntu e no Debian, Docker mais o container oficial do Dokku em qualquer outra distro. Você acompanha o log ao vivo; leva alguns minutos. Já tem Dokku? Ele é detectado e reaproveitado.",
+    "s3.c1": "Buscando a versão mais recente", "s3.c2": "Instalando o Dokku", "s3.c3": "Verificando a instalação",
+    "s4.h": "Imagem, registry, app", "s4.tag": "Setup 2-5/6", "s4.p": "Domínio global e email pro Let's Encrypt. Imagem e tag, ex. <code>ghcr.io/user/app:1.0.0</code>; privada? faça login no Docker Hub, GHCR, GitLab ou outro registry. Depois nome, porta, variáveis (cole um <code>.env</code> inteiro) e HTTPS. <b>Criar app e fazer deploy</b>.",
+    "s5.h": "Deploy ao vivo", "s5.tag": "Setup 6/6", "s5.p": "Cada fase e o log do build, em streaming. No fim, <b>Sua app está no ar</b>, com um botão pra abrir.",
+    "s5.c1": "Baixando a imagem", "s5.c2": "Iniciando o container", "s5.c3": "Health checks", "s5.c4": "No ar",
     "feat.eyebrow": "Recursos", "feat.title": "Tudo o que você faria por SSH.", "feat.lead": "O dokk não substitui o Dokku. Ele opera o Dokku, com os mesmos comandos que você digitaria, e mostra o que está acontecendo.",
     "feat.a.cap": "Detalhe da app - UI real", "feat.b.t": "Ao vivo, sem recarregar.", "feat.b.p": "Status, processos e consumo de cada app chegam por server-sent events. Nada pra atualizar na mão.",
     "feat.c.h": "Logs em streaming", "feat.c.p": "Seguir, pausar, limpar. Log de build por deploy, histórico de deploys, versões.",

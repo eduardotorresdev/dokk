@@ -6,7 +6,7 @@
 
 <p align="center">
   A web panel for <a href="https://dokku.com">Dokku</a>, shipped as a single binary.<br>
-  Turn a fresh Linux server into a Dokku PaaS and manage it from the browser.
+  From server to a Dokku PaaS, with one binary. Manage it from the browser.
 </p>
 
 <p align="center">
