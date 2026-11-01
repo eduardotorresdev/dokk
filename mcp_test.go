@@ -64,7 +64,7 @@ func TestMCPHandshakeAndList(t *testing.T) {
 	for _, tl := range tools {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "list_apps,app_status,list_releases,create_release,install_release,rollback_release,build_log,app_logs,start_app,stop_app,restart_app,exec,login" {
+	if strings.Join(names, ",") != "list_apps,app_status,list_releases,create_release,install_release,rollback_release,build_log,app_logs,start_app,stop_app,restart_app,exec,config,login" {
 		t.Errorf("tools = %v", names)
 	}
 	if byID(msgs, 3)["error"] == nil {

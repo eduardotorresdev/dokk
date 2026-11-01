@@ -230,11 +230,12 @@ In CI, set `DOKK_URL` and `DOKK_TOKEN` (an API token, `dokk_...`) instead of log
 | `dokk rollback <app> [version] [--no-hooks]` | `rollback_release {app, version?, dir?, skip_hooks?}` | Installs the given version or, without one, the highest stable registry version below the current one |
 | `dokk release --app <app> …` | `create_release {app, bump\|version, dir, …}` | Next version → commit pushed? → `docker buildx build --platform linux/amd64 --push` → GitHub release → optional install |
 | `dokk build-log <app> <id>` | `build_log` | Log of a build |
+| `dokk config get\|set\|unset builder [value]` / `config list` | `config {action, key, value?}` | This machine's config (the builder, see [Builder](#builder)) |
 | `dokk help` | `tools/list` | List of commands |
 
 Everything that lists or shows something takes `--json` for scripts. On an interactive terminal the CLI uses colors, spinners and boxes; when piped, in CI (`CI=true`), with `NO_COLOR` or `TERM=dumb` it prints plain text with timestamps. The MCP server never prints colors: tool results are plain text, with ANSI stripped from logs and command output, and errors say what to do next.
 
-`dokk release` flags: `--app`, `--bump patch|minor|major`, `--version`, `--dir`, `--notes`, `--install`, `--prerelease`, `--image` (override the image repository), `--platform`, `--no-hooks`, `--json`. It needs `git` and `docker buildx` logged in to the app's registry, an app that deploys from an image and is linked to a GitHub repository. A non-zero exit code means failure.
+`dokk release` flags: `--app`, `--bump patch|minor|major`, `--version`, `--dir`, `--notes`, `--install`, `--prerelease`, `--image` (override the image repository), `--platform`, `--builder`, `--no-hooks`, `--json`. It needs `git` and a builder (docker buildx or podman, see [Builder](#builder)) logged in to the app's registry, an app that deploys from an image and is linked to a GitHub repository. A non-zero exit code means failure.
 
 **Versions.** The next version starts from the highest of the app's git tags (in its tag format, e.g. `back@{version}`) and the semver tags already in the image's registry, so a registry ahead of the GitHub releases is never overwritten. On the remote's default branch the version is a stable bump (`--bump`, default patch). On any other branch it is a **hash version**, `<next patch of the highest stable>-sha.<UTC commit time YYYYMMDDHHMMSS>.g<sha7>`, published as a prerelease; `--bump` is refused there. `--version` always wins.
 
@@ -269,6 +270,26 @@ The parser covers only this subset of YAML: maps (block and `{ a: b }`), strings
 `--no-hooks` skips them only after typing the app name (or with `--yes` in scripts); the MCP `skip_hooks` parameter is meant to be used only when the user asks.
 
 **`config`** sets app variables before each install, without a restart, so the new image already starts with them. Placeholders: `{version}` (semver, e.g. `2.9.1`), `{tag}` (git tag, e.g. `back@2.9.1`), `{image}` and `{sha}` (the release commit).
+
+### Builder
+
+The image is built **on the client machine**, with the builder that machine has: podman on a Mac, `docker buildx` in CI. The builder is per machine, so it is never in `dokk.yml`.
+
+| Builder | Commands |
+| --- | --- |
+| `docker` | `docker buildx build --platform … -t <image> [-f …] --push <context>` |
+| `podman` | `podman build --platform … -t <image> [-f …] <context>`, then `podman push <image>` |
+| `auto` (default) | `docker` if `docker buildx version` works, else `podman` (on the PATH or `/opt/podman/bin/podman`), else an error asking to install one or configure it |
+
+Precedence: `--builder` (`dokk release`, `builder` in `create_release`) > `DOKK_BUILDER` > `~/.config/dokk/config.json` (`{"builder":"podman"}`, 0600, next to `credentials.json`) > `auto`. A binary path also works (`DOKK_BUILDER=/opt/podman/bin/podman`); the kind comes from its name.
+
+```sh
+dokk config set builder podman     # or a path; `unset` goes back to auto
+dokk config get builder
+dokk config list                   # effective value and where it came from (flag/env/config/auto)
+```
+
+The MCP `config` tool (`{action: get|set|unset, key: "builder", value?}`) writes the same file. The release step shows the builder used ("Build e push (podman)"). Logging in to the registry is the machine's job (`docker login` / `podman login`); when a push is refused for auth, the error says which command to run, e.g. `podman login ghcr.io`.
 
 GitHub Actions example:
 

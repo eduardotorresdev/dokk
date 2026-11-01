@@ -157,6 +157,7 @@ var mcpTools = []map[string]any{
 		"notes":      str("notas da release"),
 		"install":    map[string]any{"type": "boolean", "description": "instalar na app e esperar healthy"},
 		"prerelease": map[string]any{"type": "boolean"},
+		"builder":    str("builder desta vez: docker, podman, auto ou caminho do binário (padrão: DOKK_BUILDER > config da máquina > auto)"),
 		"skip_hooks": map[string]any{"type": "boolean", "description": "NUNCA use sem o usuário pedir explicitamente: pula os hooks pre-install/post-install do dokk.yml (ex. o backup antes do install)."},
 	}, "app", "dir")},
 	{"name": "install_release", "description": "Instala uma tag da imagem da app e espera ficar healthy. Roda os hooks do dokk.yml (pre-install/post-install) nesta máquina; um pre-install com erro aborta sem tocar na app.", "inputSchema": schema(map[string]any{"app": str("nome da app"), "tag": str("tag da release ou da imagem, ex. v1.4.0, back@1.17.1 ou 1.17.1"), "dir": str("diretório do repositório, para achar o dokk.yml com os hooks (absoluto; padrão: o cwd do servidor MCP)"), "skip_hooks": map[string]any{"type": "boolean", "description": "NUNCA use sem o usuário pedir explicitamente: pula os hooks pre-install/post-install do dokk.yml (ex. o backup antes do install)."}}, "app", "tag")},
@@ -172,6 +173,11 @@ var mcpTools = []map[string]any{
 		"mode":    map[string]any{"type": "string", "enum": []string{"enter", "run"}, "description": "enter (padrão) ou run"},
 		"process": str("tipo de processo, ex. web (padrão: o do servidor)"),
 	}, "app", "command")},
+	{"name": "config", "description": "Lê ou grava a config desta máquina (~/.config/dokk/config.json, a mesma do `dokk config`). Hoje só a chave builder: auto (docker com buildx, senão podman), docker, podman ou o caminho de um binário.", "inputSchema": schema(map[string]any{
+		"action": map[string]any{"type": "string", "enum": []string{"get", "set", "unset"}},
+		"key":    map[string]any{"type": "string", "enum": []string{"builder"}},
+		"value":  str("valor para set"),
+	}, "action", "key")},
 	{"name": "login", "description": "Faz login num painel dokk pelo navegador (OAuth) e grava a credencial em ~/.config/dokk/credentials.json. Necessário antes das outras tools quando não há DOKK_TOKEN.", "inputSchema": schema(map[string]any{"url": str("URL do painel, ex. https://dokk.example.com")}, "url")},
 }
 
@@ -191,6 +197,10 @@ type toolArgs struct {
 	Mode       string          `json:"mode"`
 	Process    string          `json:"process"`
 	SkipHooks  bool            `json:"skip_hooks"`
+	Builder    string          `json:"builder"`
+	Action     string          `json:"action"`
+	Key        string          `json:"key"`
+	Value      string          `json:"value"`
 }
 
 // commandArgv aceita "ls -la" (via sh -c) ou ["ls","-la"].
@@ -305,6 +315,9 @@ func (s *mcpServer) call(ctx context.Context, raw json.RawMessage) map[string]an
 	if p.Name == "login" {
 		return s.login(ctx, a.URL, pw)
 	}
+	if p.Name == "config" {
+		return s.config(ctx, a)
+	}
 	s.cmu.Lock()
 	c, cerr := s.client, s.clientErr
 	s.cmu.Unlock()
@@ -376,7 +389,7 @@ func (s *mcpServer) call(ctx context.Context, raw json.RawMessage) map[string]an
 		res, err := c.Release(ctx, client.ReleaseOptions{
 			App: a.App, Bump: a.Bump, Version: a.Version, Dir: a.Dir, Notes: a.Notes,
 			Install: a.Install, Prerelease: a.Prerelease, Reporter: client.PlainReporter{W: pw}, Runner: s.runner,
-			Config: cfg, SkipHooks: a.SkipHooks, Hooks: s.hooks,
+			Config: cfg, SkipHooks: a.SkipHooks, Hooks: s.hooks, Builder: a.Builder,
 		})
 		if err != nil {
 			return toolErr("release falhou", err)
@@ -504,4 +517,52 @@ func installText(r client.InstallResult) string {
 		t += " Hooks do dokk.yml ok."
 	}
 	return t
+}
+
+// config é a tool de config local (não precisa de login).
+func (s *mcpServer) config(ctx context.Context, a toolArgs) map[string]any {
+	uc, err := client.LoadUserConfig()
+	if err != nil {
+		return toolText("Não consegui ler a config: "+err.Error()+".", true)
+	}
+	if a.Key == "" {
+		a.Key = "builder"
+	}
+	switch a.Action {
+	case "get":
+		if _, err := uc.Get(a.Key); err != nil {
+			return toolText(err.Error()+".", true)
+		}
+		value, source, err := client.BuilderSetting("")
+		if err != nil {
+			return toolText(err.Error()+".", true)
+		}
+		run := s.runner
+		if run == nil {
+			run = client.ExecRunner{}
+		}
+		eff := "nenhum"
+		if b, err := client.ResolveBuilder(ctx, run, ""); err == nil {
+			eff = b.Kind + " (" + b.Bin + ")"
+		}
+		return toolText(fmt.Sprintf("builder: %s (origem: %s; efetivo: %s)", value, source, eff), false)
+	case "set":
+		if a.Value == "" {
+			return toolText("Parâmetro obrigatório: value.", true)
+		}
+		if err := uc.Set(a.Key, a.Value); err != nil {
+			return toolText(err.Error()+".", true)
+		}
+	case "unset":
+		if err := uc.Set(a.Key, ""); err != nil {
+			return toolText(err.Error()+".", true)
+		}
+	default:
+		return toolText("action deve ser get, set ou unset.", true)
+	}
+	if err := client.SaveUserConfig(uc); err != nil {
+		return toolText("Não consegui gravar a config: "+err.Error()+".", true)
+	}
+	p, _ := client.UserConfigPath()
+	return toolText(fmt.Sprintf("%s gravado em %s.", a.Key, p), false)
 }

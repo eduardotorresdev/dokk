@@ -59,6 +59,7 @@ func init() {
 		{"install", "<app> <tag> [--no-hooks] [--json]", "instala uma tag da imagem (com os hooks do dokk.yml) e espera ficar healthy", (*cli).install},
 		{"rollback", "<app> [versão] [--no-hooks] [--json]", "volta para a versão pedida ou para a maior anterior à atual", (*cli).rollback},
 		{"release", "--app <app> [--bump …|--version …] [--install]", "build + push + release no GitHub (+ install); fora da main, versão por hash", (*cli).release},
+		{"config", "get|set|unset builder [valor] · list", "config desta máquina (~/.config/dokk/config.json): builder = auto|docker|podman|caminho", (*cli).config},
 		{"build-log", "<app> <id> [--json]", "log de um build", (*cli).buildLog},
 		{"mcp", "", "servidor MCP por stdio (para agentes)", nil},
 		{"help", "", "esta ajuda", (*cli).help},
@@ -689,6 +690,73 @@ func (c *cli) rollback(ctx context.Context, args []string) int {
 	return 0
 }
 
+// config lê e grava a config desta máquina. O builder efetivo segue
+// --builder > DOKK_BUILDER > config.json > auto.
+func (c *cli) config(ctx context.Context, args []string) int {
+	fs := c.flags("config")
+	asJSON := fs.Bool("json", false, "")
+	pos, _, err := parse(fs, args, 3)
+	if err != nil || len(pos) == 0 {
+		return c.usage("config", err)
+	}
+	uc, err := client.LoadUserConfig()
+	if err != nil {
+		return c.fail("Não consegui ler a config", err)
+	}
+	switch action := pos[0]; {
+	case action == "list" && len(pos) == 1:
+		value, source, err := client.BuilderSetting("")
+		if err != nil {
+			return c.fail("Não consegui ler a config", err)
+		}
+		b, derr := client.ResolveBuilder(ctx, c.runnerOrExec(), "")
+		eff := b.Kind
+		if derr != nil {
+			eff = "nenhum (" + derr.Error() + ")"
+		} else if b.Bin != b.Kind {
+			eff += " (" + b.Bin + ")"
+		}
+		if *asJSON {
+			return c.printJSON(map[string]any{"builder": map[string]string{"value": value, "source": source, "effective": eff}})
+		}
+		c.out.table(c.stdout, []string{"chave", "valor", "origem", "efetivo"}, [][]cell{{plain("builder"), {text: value, style: c.out.bold}, {text: source, style: c.out.muted}, plain(eff)}})
+		return 0
+	case action == "get" && len(pos) == 2:
+		v, err := uc.Get(pos[1])
+		if err != nil {
+			return c.fail("Chave inválida", err)
+		}
+		if *asJSON {
+			return c.printJSON(map[string]string{pos[1]: v})
+		}
+		fmt.Fprintln(c.stdout, v)
+		return 0
+	case action == "set" && len(pos) == 3:
+		if err := uc.Set(pos[1], pos[2]); err != nil {
+			return c.fail("Valor inválido", err)
+		}
+	case action == "unset" && len(pos) == 2:
+		if err := uc.Set(pos[1], ""); err != nil {
+			return c.fail("Chave inválida", err)
+		}
+	default:
+		return c.usage("config", nil)
+	}
+	if err := client.SaveUserConfig(uc); err != nil {
+		return c.fail("Não consegui gravar a config", err)
+	}
+	p, _ := client.UserConfigPath()
+	fmt.Fprintf(c.stderr, " %s %s %s\n", c.err.statusMark("healthy"), pos[1], c.err.muted("gravado em "+p))
+	return 0
+}
+
+func (c *cli) runnerOrExec() client.Runner {
+	if c.runner != nil {
+		return c.runner
+	}
+	return client.ExecRunner{}
+}
+
 func (c *cli) buildLog(ctx context.Context, args []string) int {
 	fs := c.flags("build-log")
 	asJSON := fs.Bool("json", false, "")
@@ -722,6 +790,7 @@ func (c *cli) release(ctx context.Context, args []string) int {
 	fs.BoolVar(&o.Prerelease, "prerelease", false, "")
 	fs.StringVar(&o.Image, "image", "", "")
 	fs.StringVar(&o.Platform, "platform", "linux/amd64", "")
+	fs.StringVar(&o.Builder, "builder", "", "")
 	asJSON := fs.Bool("json", false, "")
 	hf := addHookFlags(fs)
 	pos, _, err := parse(fs, args, 1)

@@ -73,7 +73,7 @@ func (f *fakeRunner) Run(_ context.Context, dir string, out io.Writer, name stri
 		io.WriteString(out, "abcdef1234567890\n")
 	case strings.HasPrefix(line, "git branch -r"):
 		io.WriteString(out, f.remote)
-	case strings.HasPrefix(line, "docker"):
+	case strings.HasPrefix(line, "docker buildx build"), strings.HasPrefix(line, "podman build"):
 		io.WriteString(out, "#1 building\n")
 		return f.buildErr
 	}

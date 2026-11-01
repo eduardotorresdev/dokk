@@ -47,6 +47,7 @@ type ReleaseOptions struct {
 	Install    bool
 	Image      string // repositório da imagem; vazio = o da imagem atual da app
 	Platform   string // padrão linux/amd64
+	Builder    string // docker | podman | auto | caminho; vazio = DOKK_BUILDER > config > auto
 
 	// Config é o dokk.yml (build e hooks); nil = build de Dir/Dockerfile, sem hooks.
 	Config    *Config
@@ -65,6 +66,7 @@ type ReleaseResult struct {
 	Tag        string `json:"tag"`
 	SHA        string `json:"sha"`
 	Branch     string `json:"branch,omitempty"`
+	Builder    string `json:"builder,omitempty"`
 	Prerelease bool   `json:"prerelease,omitempty"`
 	Image      string `json:"image"`
 	URL        string `json:"url"`
@@ -323,16 +325,20 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 		return res, err
 	}
 
-	err = step("Build e push de "+res.Image, func() (string, error) {
-		args := []string{"buildx", "build", "--platform", o.Platform, "-t", res.Image, "--push"}
+	builder, err := ResolveBuilder(ctx, o.Runner, o.Builder)
+	if err != nil {
+		rep.Step("Build e push")
+		rep.Done("", err)
+		return res, err
+	}
+	res.Builder = builder.Kind
+	err = step("Build e push ("+builder.Kind+")", func() (string, error) {
+		var context, dockerfile string
 		if o.Config != nil {
-			context, dockerfile := o.Config.BuildPaths(o.App, o.Dir)
-			args = append(args, "-f", dockerfile, context)
-		} else {
-			args = append(args, ".")
+			context, dockerfile = o.Config.BuildPaths(o.App, o.Dir)
 		}
-		if err := o.Runner.Run(ctx, o.Dir, rep.Output(), "docker", args...); err != nil {
-			return "", fmt.Errorf("build da imagem: %w", err)
+		if err := builder.BuildPush(ctx, o.Runner, o.Dir, rep.Output(), o.Platform, res.Image, dockerfile, context); err != nil {
+			return "", err
 		}
 		return o.Platform, nil
 	})
