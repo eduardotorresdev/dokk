@@ -31,7 +31,7 @@ var (
 	// Chaves montadas em tempo de execução ("prefixo" + código) só valem
 	// para estes conjuntos fechados, que têm fallback na UI.
 	builtKeyPrefixes = []string{"common.status.", "common.action.running.", "onboarding.job.step.", "onboarding.dokku.reason.", "errors."}
-	uiNamespaces     = []string{"app", "auth", "common", "errors", "home", "onboarding", "registries"}
+	uiNamespaces     = []string{"app", "auth", "common", "errors", "home", "onboarding", "registries", "settings"}
 )
 
 // parseLocaleFile lê um dicionário linha a linha; ns é o nome do arquivo.

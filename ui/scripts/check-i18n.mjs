@@ -10,7 +10,7 @@ import { join, relative, resolve, dirname } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const LANGS = ["en", "es", "pt-BR"]
-const NAMESPACES = ["app", "auth", "common", "errors", "home", "onboarding", "registries"]
+const NAMESPACES = ["app", "auth", "common", "errors", "home", "onboarding", "registries", "settings"]
 const BUILT = ["common.status.", "common.action.running.", "onboarding.job.step.", "onboarding.dokku.reason.", "errors."]
 
 const src = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), "../src"))

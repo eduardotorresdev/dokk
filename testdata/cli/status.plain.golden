@@ -1,0 +1,11 @@
+# stdout
+ ╭─ web ──────────────────────────────────────────────────────╮
+ │ status     ● healthy · 31/10 13:00:00                      │
+ │ imagem     ghcr.io/acme/web:v1.0.0                         │
+ │ versão     v1.0.0                                          │
+ │ commit     0123456789ab                                    │
+ │ url        https://web.acme.dev                            │
+ │ processos  ● web 2/2  ● worker 0/1                         │
+ │ release    https://github.com/acme/web/releases/tag/v1.0.0 │
+ ╰────────────────────────────────────────────────────────────╯
+# stderr

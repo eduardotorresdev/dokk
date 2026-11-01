@@ -1,0 +1,7 @@
+# stdout
+ [38;2;141;138;133mAPP[0m                    [38;2;141;138;133mSTATUS[0m       [38;2;141;138;133mIMAGEM[0m                 [38;2;141;138;133mURL[0m
+ [1mapi-com-um-nome-bem-…[0m  [38;2;245;177;61m●[0m degraded   [38;2;141;138;133mregistry.example.com…[0m  [38;2;77;132;255mhttp://api.acme.dev[0m
+ [1mjobs[0m                   [38;2;166;133;255m◐[0m restart…   [38;2;141;138;133macme/jobs:v1[0m           [38;2;77;132;255m—[0m
+ [1mweb[0m                    [38;2;77;132;255m●[0m healthy    [38;2;141;138;133mghcr.io/acme/web:v1.…[0m  [38;2;77;132;255mhttps://web.acme.dev[0m
+ [1m日本語[0m                 [38;2;141;138;133m○[0m suspended  [38;2;141;138;133m—[0m                      [38;2;77;132;255m—[0m
+# stderr

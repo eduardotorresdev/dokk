@@ -1,0 +1,7 @@
+# stdout
+# stderr
+
+ ✗ Não consegui ler nope
+   dokk: app não encontrada (HTTP 404)
+   → confira o nome com `dokk apps`
+

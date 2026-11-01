@@ -50,7 +50,8 @@ type auth struct {
 	mu      sync.RWMutex
 	user    *superuser // nil = primeira execução
 	limiter *loginLimiter
-	prefs   *prefs // idioma salvo; main.go liga depois do newAuth
+	prefs   *prefs      // idioma salvo; main.go liga depois do newAuth
+	tokens  *tokenStore // tokens de API (Bearer); main.go liga depois do newAuth
 }
 
 var errSuperuserExists = errors.New("o superusuário já foi criado")
@@ -149,7 +150,16 @@ func (a *auth) valid(token string) bool {
 	return err == nil && time.Now().Unix() < exp
 }
 
+// loggedIn: com Authorization, só o token de API conta (o cookie é ignorado);
+// sem ele, vale o cookie de sessão.
 func (a *auth) loggedIn(r *http.Request) bool {
+	if tok, has := bearer(r); has {
+		return a.current() != nil && a.tokens.check(tok)
+	}
+	return a.cookieLoggedIn(r)
+}
+
+func (a *auth) cookieLoggedIn(r *http.Request) bool {
 	c, err := r.Cookie(sessionCookie)
 	return err == nil && a.valid(c.Value)
 }

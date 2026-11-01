@@ -27,13 +27,14 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           mkdir -p dist
-          for arch in amd64 arm64; do
-            out="dist/dokk_linux_$arch"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}" arch="${target#*/}"
+            out="dist/dokk_${os}_$arch"
             mkdir -p "$out"
-            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath \
+            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath \
               -ldflags "-s -w -X main.version=$VERSION" -o "$out/dokk" .
             cp README.md "$out/" && [ -f LICENSE ] && cp LICENSE "$out/" || true
-            tar -C "$out" -czf "dist/dokk_linux_$arch.tar.gz" $(ls "$out")
+            tar -C "$out" -czf "dist/dokk_${os}_$arch.tar.gz" $(ls "$out")
           done
           cd dist && sha256sum *.tar.gz > checksums.txt && cat checksums.txt
       - name: Publish GitHub release

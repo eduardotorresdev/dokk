@@ -501,6 +501,7 @@ export function headerNav() {
     const items = [
         { href: "/", label: () => tr("common.nav.apps"), match: (p) => p === "/" || p.startsWith("/apps/") },
         { href: "/registries", label: () => tr("common.nav.registries"), match: (p) => p.startsWith("/registries") },
+        { href: "/settings", label: () => tr("common.nav.settings"), match: (p) => p.startsWith("/settings") },
     ]
     const links = items.map((i) => t.a({ href: i.href, textContent: i.label }))
     const sync = () => items.forEach((i, n) => links[n].classList.toggle("active", i.match(location.pathname)))

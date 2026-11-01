@@ -5,6 +5,8 @@ import { errorRoute, notFound } from "./pages/not-found.js"
 import { login, setup } from "./pages/login.js"
 import { onboarding } from "./pages/onboarding.js"
 import { registries } from "./pages/registries.js"
+import { settings } from "./pages/settings.js"
+import { oauthConsent } from "./pages/oauth.js"
 import { brand, headerNav, navigate, userMenu } from "./shared.js"
 import { i18n, syncServerLang, tr } from "./i18n.js"
 
@@ -50,6 +52,8 @@ const showHeader = (on) => {
 const TITLES = [
     [/^\/apps\/([^/?]+)$/, (m) => decodeURIComponent(m[1])],
     [/^\/registries$/, () => tr("common.page.registries")],
+    [/^\/settings$/, () => tr("common.page.settings")],
+    [/^\/oauth\/authorize$/, () => tr("common.page.oauth")],
     [/^\/onboarding$/, () => tr("common.page.onboarding")],
     [/^\/login$/, () => tr("common.page.login")],
     [/^\/setup$/, () => tr("common.page.setup")],
@@ -131,7 +135,7 @@ const guard = (page) => async (route) => {
         navigate("/", { replace: true })
         return
     }
-    const chrome = [home, appDetail, onboarding, registries].includes(page)
+    const chrome = [home, appDetail, onboarding, registries, settings].includes(page)
     return mount(page, { chrome })(route)
 }
 
@@ -140,6 +144,8 @@ router({
     "/apps/{name}": guard(appDetail),
     "/onboarding": guard(onboarding),
     "/registries": guard(registries),
+    "/settings": guard(settings),
+    "/oauth/authorize": guard(oauthConsent),
     "/login": guard(login),
     "/setup": guard(setup),
     "/404": mount(notFound),

@@ -2,6 +2,9 @@
 export default {
     "auth.login.title": "Iniciar sesión",
     "auth.login.subtitle": "Accede al panel de tus apps en Dokku.",
+    "auth.login.oauth.step": "Solicitud de acceso",
+    "auth.login.oauth.title": "Inicia sesión para autorizar {client}",
+    "auth.login.oauth.subtitle": "{client} pide acceso a este dokk. Inicia sesión para revisar la solicitud.",
     "auth.login.submit": "Iniciar sesión",
     "auth.login.busy": "Iniciando sesión…",
     "auth.email.label": "Correo electrónico",

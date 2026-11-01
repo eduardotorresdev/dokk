@@ -1,0 +1,7 @@
+# stdout
+ APP                           STATUS       IMAGEM                                                       URL
+ api-com-um-nome-bem-comprido  ● degraded   registry.example.com/acme/api-service-with-long-name:v2.3.4  http://api.acme.dev
+ jobs                          ◐ restart…   acme/jobs:v1                                                 —
+ web                           ● healthy    ghcr.io/acme/web:v1.0.0                                      https://web.acme.dev
+ 日本語                        ○ suspended  —                                                            —
+# stderr

@@ -2,6 +2,11 @@
 # dokk installer: downloads the latest release, installs /usr/local/bin/dokk
 # and starts it as a systemd service.
 #
+# On macOS it only installs the client binary (dokk release / dokk mcp) to
+# /usr/local/bin, or ~/.local/bin when that is not writable:
+#
+#   curl -fsSL https://eduardotorresdev.github.io/dokk/install.sh | sh
+#
 #   curl -fsSL https://eduardotorresdev.github.io/dokk/install.sh | sudo sh
 #
 # Options (env vars):
@@ -18,8 +23,20 @@ ADDR="${DOKK_ADDR:-127.0.0.1:7070}"
 say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-[ "$(uname -s)" = "Linux" ] || die "dokk runs on Linux only."
-[ "$(id -u)" -eq 0 ] || die "run as root: curl -fsSL https://eduardotorresdev.github.io/dokk/install.sh | sudo sh"
+case "$(uname -s)" in
+  Linux)
+    OS=linux
+    [ "$(id -u)" -eq 0 ] || die "run as root: curl -fsSL https://eduardotorresdev.github.io/dokk/install.sh | sudo sh"
+    ;;
+  Darwin)
+    OS=darwin
+    if [ ! -w /usr/local/bin ] && [ "$(id -u)" -ne 0 ]; then
+      BIN="$HOME/.local/bin/dokk"
+      mkdir -p "$HOME/.local/bin"
+    fi
+    ;;
+  *) die "unsupported OS: $(uname -s) (Linux and macOS only)" ;;
+esac
 
 case "$(uname -m)" in
   x86_64 | amd64) ARCH=amd64 ;;
@@ -46,7 +63,7 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
-FILE="dokk_linux_$ARCH.tar.gz"
+FILE="dokk_${OS}_$ARCH.tar.gz"
 say "Downloading $FILE (${DOKK_VERSION:-latest})"
 fetch "$BASE/$FILE" "$TMP/$FILE" || die "download failed: $BASE/$FILE"
 fetch "$BASE/checksums.txt" "$TMP/checksums.txt" || die "download failed: $BASE/checksums.txt"
@@ -56,6 +73,8 @@ EXPECTED="$(grep " $FILE\$" "$TMP/checksums.txt" | cut -d' ' -f1)"
 [ -n "$EXPECTED" ] || die "$FILE not found in checksums.txt"
 if command -v sha256sum >/dev/null 2>&1; then
   ACTUAL="$(sha256sum "$TMP/$FILE" | cut -d' ' -f1)"
+elif command -v shasum >/dev/null 2>&1; then
+  ACTUAL="$(shasum -a 256 "$TMP/$FILE" | cut -d' ' -f1)"
 else
   ACTUAL="$(openssl dgst -sha256 "$TMP/$FILE" | awk '{print $NF}')"
 fi
@@ -67,6 +86,19 @@ tar -xzf "$TMP/$FILE" -C "$TMP/x"
 install -m 0755 "$TMP/x/dokk" "$BIN.new"
 mv "$BIN.new" "$BIN"
 say "Installed $("$BIN" -version) to $BIN"
+
+if [ "$OS" = "darwin" ]; then
+  case ":$PATH:" in
+    *":$(dirname "$BIN"):"*) ;;
+    *) printf "\nAdd %s to your PATH:\n  export PATH=\"%s:\$PATH\"\n" "$(dirname "$BIN")" "$(dirname "$BIN")" ;;
+  esac
+  printf '\nThe panel runs on your Linux server; this binary is the client.\n'
+  printf 'Log in, then add it to Claude Code:\n'
+  printf '  %s login https://<your-panel>\n' "$BIN"
+  printf '  claude mcp add dokk -- %s mcp\n' "$BIN"
+  printf 'Or release from a repo:\n  dokk release --app <app> --bump patch --install\n\n'
+  exit 0
+fi
 
 if [ "${DOKK_NO_SERVICE:-}" = "1" ] || ! command -v systemctl >/dev/null 2>&1 || [ ! -d /run/systemd/system ]; then
   say "Skipping systemd service. Start it with: $BIN -addr $ADDR"

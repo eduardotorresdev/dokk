@@ -157,8 +157,16 @@ function safeNext(next) {
     return next
 }
 
+// Cliente OAuth esperando o login (dokk:next aponta para /oauth/authorize).
+function oauthClient() {
+    const next = sessionStorage.getItem("dokk:next") || ""
+    if (!next.startsWith("/oauth/authorize?")) return ""
+    return new URLSearchParams(next.slice(next.indexOf("?"))).get("client_id") || ""
+}
+
 export function login() {
     const ui = store({ email: "", password: "", busy: false, error: "" })
+    const client = oauthClient()
     const submit = async (e) => {
         e.preventDefault()
         ui.busy = true
@@ -183,8 +191,9 @@ export function login() {
         }
     }
     const form = t.form({ className: "login-form", onsubmit: submit },
-        t.h1({ textContent: () => tr("auth.login.title") }),
-        t.p({ className: "muted", textContent: () => tr("auth.login.subtitle") }),
+        client ? t.span({ className: "setup-step mono", textContent: () => tr("auth.login.oauth.step") }) : null,
+        t.h1({ className: client ? "login-title-oauth" : "", textContent: () => client ? tr("auth.login.oauth.title", { client }) : tr("auth.login.title") }),
+        t.p({ className: "muted", textContent: () => client ? tr("auth.login.oauth.subtitle", { client }) : tr("auth.login.subtitle") }),
         t.label({ className: "field" },
             t.span({ textContent: () => tr("auth.email.label") }),
             t.input({
@@ -211,7 +220,7 @@ export function login() {
 }
 
 // Layout das telas de acesso: formulário à esquerda, cidade à direita.
-function authLayout(form, { onunmount } = {}) {
+export function authLayout(form, { onunmount } = {}) {
     return t.main({ className: "login", ...(onunmount ? { onunmount } : {}) },
         t.section({ className: "login-form-wrap" },
             t.div({ className: "auth-lang" }, langSelect()),

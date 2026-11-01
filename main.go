@@ -29,6 +29,11 @@ var version = "dev"
 var uiFiles embed.FS
 
 func main() {
+	// Subcomandos clientes (falam com um dokk remoto): ver cli.go.
+	if len(os.Args) > 1 && isCLICommand(os.Args[1]) {
+		os.Exit(runCLI(os.Args[1:]))
+	}
+
 	addr := flag.String("addr", "127.0.0.1:7070", "endereço HTTP")
 	dataDir := flag.String("data", "/var/lib/dokk", "diretório de dados do dokk (superusuário)")
 	interval := flag.Duration("interval", 5*time.Second, "intervalo entre checks")
@@ -514,6 +519,11 @@ func main() {
 		if !ok {
 			return
 		}
+		// Cliente HTTP comum (sem EventSource) ou ?lines=N: JSON sem streaming.
+		if r.URL.Query().Has("lines") || !strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			logsSnapshot(w, r, client.Logs, app.Name)
+			return
+		}
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, msg(r, "err.streamingUnsupported"), http.StatusInternalServerError)
@@ -551,6 +561,21 @@ func main() {
 	ob.mode = mode
 	ob.routes(mux)
 	registryRoutes(mux, client, monitor)
+	if a.tokens, err = loadTokens(filepath.Join(*dataDir, "tokens.json")); err != nil {
+		log.Fatalf("tokens: %v", err)
+	}
+	tokenRoutes(mux, a, a.tokens)
+	gh, err := newGitHub(*dataDir, "")
+	if err != nil {
+		log.Fatalf("github: %v", err)
+	}
+	appExists := func(ctx context.Context, name string) (bool, error) {
+		_, ok, err := monitor.App(ctx, name)
+		return ok, err
+	}
+	githubRoutes(mux, gh, appExists)
+	execRoutes(mux, a, appExists, client.Exec)
+	oauthRoutes(mux, a, uiHandler(ui))
 	mux.HandleFunc("POST /api/setup", a.setup)
 	mux.HandleFunc("POST /api/login", a.login)
 	mux.HandleFunc("POST /api/logout", a.logout)
@@ -623,7 +648,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // fetch da própria UI manda o cabeçalho X-Dokk (um form externo não consegue).
 func sameOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Header.Get("X-Dokk") != "1" {
+		// Com Bearer não há risco de CSRF (o navegador não manda esse
+		// cabeçalho sozinho), e a auth ignora o cookie nesse caso.
+		_, hasBearer := bearer(r)
+		// O token endpoint do OAuth é chamado por clientes nativos e não usa
+		// cookie: não há o que forjar.
+		hasBearer = hasBearer || r.URL.Path == "/oauth/token"
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !hasBearer && r.Header.Get("X-Dokk") != "1" {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}

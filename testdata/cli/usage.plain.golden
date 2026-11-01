@@ -1,0 +1,6 @@
+# stdout
+# stderr
+
+ ✗ Uso incorreto
+   uso: dokk install <app> <tag> [--json]
+

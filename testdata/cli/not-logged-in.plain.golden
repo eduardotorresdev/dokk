@@ -1,0 +1,5 @@
+
+ ✗ Sem login
+   sem credencial do dokk: rode `dokk login <url>` ou defina DOKK_URL e DOKK_TOKEN
+   → rode `dokk login <url>` (ou defina DOKK_URL e DOKK_TOKEN)
+

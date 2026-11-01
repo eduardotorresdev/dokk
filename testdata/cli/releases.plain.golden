@@ -1,0 +1,5 @@
+# stdout
+    TAG           DATA              COMMIT   URL
+ ●  v1.0.0        30/10/2026 12:00  0123456  https://github.com/acme/web/releases/tag/v1.0.0
+    v0.9.0 (pre)  01/10/2026 12:00  fedcba9  https://github.com/acme/web/releases/tag/v0.9.0
+# stderr

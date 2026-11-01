@@ -1,0 +1,7 @@
+# stdout
+# stderr
+
+ [38;2;255;92;97m✗[0m [1m[38;2;255;92;97mNão consegui ler nope[0m
+   dokk: app não encontrada (HTTP 404)
+   [38;2;77;132;255m→[0m confira o nome com `dokk apps`
+

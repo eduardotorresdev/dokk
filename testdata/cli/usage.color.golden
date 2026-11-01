@@ -1,0 +1,6 @@
+# stdout
+# stderr
+
+ [38;2;255;92;97m✗[0m [1m[38;2;255;92;97mUso incorreto[0m
+   uso: dokk install <app> <tag> [--json]
+

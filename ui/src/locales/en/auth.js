@@ -2,6 +2,9 @@
 export default {
     "auth.login.title": "Sign in",
     "auth.login.subtitle": "Access the dashboard for your Dokku apps.",
+    "auth.login.oauth.step": "Access request",
+    "auth.login.oauth.title": "Sign in to authorize {client}",
+    "auth.login.oauth.subtitle": "{client} is asking for access to this dokk. Sign in to review the request.",
     "auth.login.submit": "Sign in",
     "auth.login.busy": "Signing in…",
     "auth.email.label": "Email",

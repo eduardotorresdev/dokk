@@ -205,9 +205,75 @@ make check          # go vet, go test, UI syntax + i18n checks
 make build-linux    # static linux/amd64 binary in bin/
 ```
 
+## CLI and MCP
+
+The same `dokk` binary is also a client for a remote panel, in two thin layers over the same code: a CLI for people and CI, and an MCP server for agents. Both do the same things.
+
+```sh
+dokk login https://dokk.example.com   # opens the browser (OAuth + PKCE), saves ~/.config/dokk/credentials.json
+dokk apps                             # table with status, image and URL
+dokk release --app web --bump minor --install
+```
+
+In CI, set `DOKK_URL` and `DOKK_TOKEN` (an API token, `dokk_...`) instead of logging in; they take precedence over the saved credential.
+
+| CLI | MCP tool | What it does |
+| --- | --- | --- |
+| `dokk login [url]` / `logout` / `whoami` | `login {url}` | Browser login and the saved credential |
+| `dokk apps` | `list_apps` | Apps with status, image and URL |
+| `dokk status <app>` | `app_status` | Image, version, commit, URL, processes, checks |
+| `dokk logs <app> [-n N]` | `app_logs {app, lines?}` | Last lines of the app log |
+| `dokk start\|stop\|restart <app>` | `start_app` / `stop_app` / `restart_app` | Runs the action and waits for it (start/restart: until healthy) |
+| `dokk exec <app> [--run] [--process web] -- <cmd…>` | `exec {app, command, mode?, process?}` | Runs a command **inside the app's container** (never on the host); the CLI exits with the remote exit code |
+| `dokk releases <app>` | `list_releases` | GitHub releases, the installed one marked |
+| `dokk install <app> <tag>` | `install_release {app, tag}` | Installs a tag of the app's image and waits until healthy |
+| `dokk release --app <app> …` | `create_release {app, bump\|version, dir, …}` | Next semver tag → commit pushed? → `docker buildx build --platform linux/amd64 --push` → GitHub release → optional install |
+| `dokk build-log <app> <id>` | `build_log` | Log of a build |
+| `dokk help` | `tools/list` | List of commands |
+
+Everything that lists or shows something takes `--json` for scripts. On an interactive terminal the CLI uses colors, spinners and boxes; when piped, in CI (`CI=true`), with `NO_COLOR` or `TERM=dumb` it prints plain text with timestamps. The MCP server never prints colors: tool results are plain text, with ANSI stripped from logs and command output, and errors say what to do next.
+
+`dokk release` flags: `--app`, `--bump patch|minor|major`, `--version`, `--dir`, `--notes`, `--install`, `--prerelease`, `--image` (override the image repository), `--platform`, `--json`. It needs `git` and `docker buildx` logged in to the app's registry, an app that deploys from an image and is linked to a GitHub repository. A non-zero exit code means failure.
+
+GitHub Actions example:
+
+```yaml
+name: Release app
+on:
+  workflow_dispatch:
+    inputs:
+      bump: { type: choice, options: [patch, minor, major], default: patch }
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install dokk
+        run: |
+          curl -fsSL https://github.com/eduardotorresdev/dokk/releases/latest/download/dokk_linux_amd64.tar.gz | tar -xz dokk
+          sudo mv dokk /usr/local/bin/
+      - name: Release
+        env:
+          DOKK_URL: https://dokk.example.com
+          DOKK_TOKEN: ${{ secrets.DOKK_TOKEN }}
+        run: dokk release --app web --bump ${{ inputs.bump }} --install
+```
+
+MCP in Claude Code (log in first with `dokk login`, or ask Claude to call the `login` tool):
+
+```sh
+claude mcp add dokk -- dokk mcp
+```
+
 ## Release process
 
-Releases are built by GitHub Actions. Push a tag and the workflow builds `linux/amd64` and `linux/arm64` archives, generates `checksums.txt` and publishes a GitHub Release:
+Releases are built by GitHub Actions. Push a tag and the workflow builds `linux/amd64`, `linux/arm64`, `darwin/amd64` and `darwin/arm64` archives, generates `checksums.txt` and publishes a GitHub Release:
 
 ```sh
 git tag v0.2.0
