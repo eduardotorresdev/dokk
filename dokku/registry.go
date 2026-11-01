@@ -62,7 +62,11 @@ func ParseImage(s string) (ImageRef, bool) {
 	return r, true
 }
 
-const maxReleases = 40
+const (
+	maxReleases = 40
+	tagPageSize = 1000 // tags por página da API v2
+	maxTagPages = 20
+)
 
 // Tags de versão lançada começam com número ("1.15.4", "v2", "1.27-alpine").
 // O resto (pr-32-abc, sha-..., latest) costuma ser tag de CI; só aparece se
@@ -133,13 +137,29 @@ func (c *Client) registryReleases(ctx context.Context, ref ImageRef) ([]Release,
 	if err != nil {
 		return nil, err
 	}
-	var body struct {
-		Tags []string `json:"tags"`
+	// A lista vem paginada (o ghcr devolve no máximo 1000 por página, em
+	// ordem de criação): segue com `last` até acabar, senão as versões mais
+	// novas de um repo com muitas tags ficam de fora.
+	var all []string
+	last := ""
+	for page := 0; page < maxTagPages; page++ {
+		var body struct {
+			Tags []string `json:"tags"`
+		}
+		u := fmt.Sprintf("https://%s/v2/%s/tags/list?n=%d", ref.Registry, ref.Repo, tagPageSize)
+		if last != "" {
+			u += "&last=" + url.QueryEscape(last)
+		}
+		if err := getJSON(ctx, u, "Bearer "+token, &body); err != nil {
+			return nil, err
+		}
+		all = append(all, body.Tags...)
+		if len(body.Tags) < tagPageSize || body.Tags[len(body.Tags)-1] == last {
+			break
+		}
+		last = body.Tags[len(body.Tags)-1]
 	}
-	if err := getJSON(ctx, fmt.Sprintf("https://%s/v2/%s/tags/list?n=1000", ref.Registry, ref.Repo), "Bearer "+token, &body); err != nil {
-		return nil, err
-	}
-	tags := pickReleases(body.Tags)
+	tags := pickReleases(all)
 	sort.Slice(tags, func(i, j int) bool { return versionLess(tags[j], tags[i]) })
 	out := []Release{}
 	for _, t := range tags {
