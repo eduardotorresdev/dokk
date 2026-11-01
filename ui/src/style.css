@@ -1713,3 +1713,11 @@ a.block:hover { text-decoration: none; transform: translateY(-1px); box-shadow: 
 .modal.closing::backdrop, .dialog.closing::backdrop { animation: backdrop-out .15s ease-in forwards; }
 @keyframes modal-out { to { opacity: 0; transform: translateY(8px) scale(.98); } }
 @keyframes backdrop-out { to { opacity: 0; } }
+
+/* GitHub App: repositórios acessíveis e configuração manual */
+.gh-repo-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; max-height: 220px; overflow: auto; font-size: 12.5px; }
+.gh-repo-list li { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.gh-repo-list .chip { font-family: inherit; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--surface); color: var(--muted); }
+.settings-advanced { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.settings-advanced > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.settings-advanced[open] > summary { margin-bottom: 12px; }

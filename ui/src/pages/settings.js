@@ -14,13 +14,57 @@ const getJSON = async (path) => {
     return body
 }
 
-// Config da GitHub App: App ID, slug e chave privada (que nunca volta do
-// servidor; em branco mantém a atual).
-function githubSection() {
-    const ui = store({ loading: true, configured: false, appId: "", slug: "", key: "", installUrl: "", busy: false, error: "" })
-    const apply = (b) => Object.assign(ui, { configured: !!b.configured, appId: b.appId ? String(b.appId) : "", slug: b.slug || "", installUrl: b.installUrl || "" })
-    getJSON("/api/github").then(apply).catch((e) => ui.error = e.message).finally(() => ui.loading = false)
+// Envia o manifest para o GitHub num POST de form (o GitHub só aceita assim).
+function postManifest(action, manifest) {
+    const form = t.form({ method: "post", action, hidden: true },
+        t.input({ type: "hidden", name: "manifest", value: manifest }))
+    document.body.append(form)
+    form.submit()
+}
 
+// Lê e limpa o ?github= que o servidor deixa ao voltar do GitHub. Guarda o
+// valor por um instante: a página pode ser montada mais de uma vez na entrada.
+let githubNotice = ""
+function takeGithubNotice() {
+    const q = new URLSearchParams(location.search)
+    const v = q.get("github")
+    if (v) {
+        q.delete("github")
+        history.replaceState(history.state, "", location.pathname + (q.size ? `?${q}` : ""))
+        githubNotice = ["installed", "state", "error"].includes(v) ? v : ""
+        setTimeout(() => githubNotice = "", 3000)
+    }
+    return githubNotice
+}
+
+// GitHub App: conectar pelo manifest flow (cria a App no GitHub com um
+// clique); a configuração manual (App ID, slug, chave) fica em "Avançado".
+function githubSection() {
+    const ui = store({
+        loading: true, configured: false, appId: "", slug: "", key: "", installUrl: "", busy: false, error: "",
+        org: "", connecting: false, notice: takeGithubNotice(), repos: null, reposError: "",
+    })
+    const loadRepos = () => getJSON("/api/github/repos").then((l) => ui.repos = l).catch((e) => ui.reposError = e.message)
+    const apply = (b) => {
+        Object.assign(ui, { configured: !!b.configured, appId: b.appId ? String(b.appId) : "", slug: b.slug || "", installUrl: b.installUrl || "" })
+        if (ui.configured && !ui.repos) loadRepos()
+    }
+    getJSON("/api/github").then(apply).catch((e) => ui.error = e.message).finally(() => ui.loading = false)
+    if (ui.notice === "installed" && !takeGithubNotice.toasted) { takeGithubNotice.toasted = true; toast(tr("settings.github.notice.installed")); setTimeout(() => takeGithubNotice.toasted = false, 3000) }
+
+    const connect = async (e) => {
+        e.preventDefault()
+        if (ui.connecting) return
+        ui.connecting = true
+        ui.error = ""
+        try {
+            const out = await api("POST", "/api/github/manifest", { org: ui.org.trim() })
+            postManifest(out.action, out.manifest)
+        } catch (err) {
+            ui.error = err.message
+            ui.connecting = false
+        }
+    }
     const save = async (e) => {
         e.preventDefault()
         if (ui.busy) return
@@ -36,6 +80,36 @@ function githubSection() {
     }
     const field = (label, input) => t.label({ className: "field" }, t.span({ textContent: label }), input)
 
+    const connectForm = () => t.form({ rid: "connect", className: "settings-form", onsubmit: connect },
+        field(() => tr("settings.github.org.label"), t.input({
+            className: "input mono", autocomplete: "off", spellcheck: false, maxLength: 39,
+            placeholder: () => tr("settings.github.org.placeholder"),
+            value: () => ui.org, oninput: (e) => { ui.org = e.target.value; ui.error = "" },
+        })),
+        t.p({ className: "muted", textContent: () => tr("settings.github.org.hint") }),
+        t.div({ className: "settings-actions" },
+            t.button({ type: "submit", className: "btn btn-primary", disabled: () => ui.connecting || ui.loading },
+                () => ui.connecting ? [t.span({ className: "spinner" }), t.span({ textContent: () => tr("settings.github.connecting") })] : [t.span({ textContent: () => tr("settings.github.connect") })]),
+        ),
+    )
+    const connected = () => t.div({ rid: "connected", className: "settings-form" },
+        t.p({ className: "muted" },
+            t.span({ textContent: () => tr("settings.github.connectedAs") + " " }),
+            t.a({ className: "mono", href: `https://github.com/apps/${ui.slug}`, target: "_blank", rel: "noopener", textContent: ui.slug })),
+        t.div({}, () => {
+            if (ui.reposError) return t.p({ rid: "re", className: "form-error", textContent: ui.reposError })
+            if (!ui.repos) return t.p({ rid: "rl", className: "muted", textContent: () => tr("settings.github.repos.loading") })
+            if (!ui.repos.length) return t.p({ rid: "r0", className: "muted", textContent: () => tr("settings.github.repos.empty") })
+            return t.div({ rid: "rs" },
+                t.p({ className: "muted", textContent: () => tr("settings.github.repos.title", { n: ui.repos.length }) }),
+                t.ul({ className: "gh-repo-list" }, ...ui.repos.map((r) => t.li({ className: "mono" },
+                    t.span({ textContent: r.fullName }),
+                    r.private ? t.span({ className: "chip", textContent: () => tr("settings.github.repos.private") }) : null))))
+        }),
+        t.div({ className: "settings-actions" },
+            ui.installUrl ? t.a({ className: "btn", href: ui.installUrl, textContent: () => tr("settings.github.install") }) : null),
+    )
+
     return t.section({ className: "settings-card" },
         t.div({ className: "settings-card-head" },
             t.h3({ textContent: () => tr("settings.github.title") }),
@@ -44,28 +118,31 @@ function githubSection() {
                 t.span({ textContent: () => tr(ui.configured ? "settings.github.status.configured" : "settings.github.status.missing") })),
         ),
         t.p({ className: "muted", textContent: () => tr("settings.github.text") }),
-        t.form({ className: "settings-form", onsubmit: save },
-            field(() => tr("settings.github.appId.label"), t.input({
-                className: "input mono", inputMode: "numeric", required: true, autocomplete: "off",
-                value: () => ui.appId, oninput: (e) => { ui.appId = e.target.value.replace(/\D/g, ""); ui.error = "" },
-            })),
-            field(() => tr("settings.github.slug.label"), t.input({
-                className: "input mono", required: true, autocomplete: "off", spellcheck: false, title: () => tr("settings.github.slug.hint"),
-                value: () => ui.slug, oninput: (e) => { ui.slug = e.target.value; ui.error = "" },
-            })),
-            field(() => tr("settings.github.key.label"), t.textarea({
-                className: "input mono settings-key", rows: 4, spellcheck: false, autocomplete: "off",
-                required: () => !ui.configured,
-                placeholder: () => tr("settings.github.key.placeholder"),
-                value: () => ui.key, oninput: (e) => { ui.key = e.target.value; ui.error = "" },
-            })),
-            t.p({ className: "muted", hidden: () => !ui.configured, textContent: () => tr("settings.github.key.keep") }),
-            t.p({ className: "form-error", role: "alert", hidden: () => !ui.error, textContent: () => ui.error }),
-            t.div({ className: "settings-actions" },
-                // .btn define display: o hidden não esconderia; renderiza só quando vale.
-                () => ui.configured && ui.installUrl ? t.a({ rid: "install", className: "btn", href: ui.installUrl, target: "_blank", rel: "noopener", textContent: () => tr("settings.github.install") }) : null,
-                t.button({ type: "submit", className: "btn btn-primary", disabled: () => ui.busy || ui.loading },
-                    () => ui.busy ? [t.span({ className: "spinner" }), t.span({ textContent: () => tr("settings.github.busy") })] : [t.span({ textContent: () => tr("settings.github.save") })]),
+        t.p({ className: "form-error", role: "alert", hidden: () => ui.notice !== "state" && ui.notice !== "error", textContent: () => ui.notice === "state" ? tr("settings.github.notice.state") : ui.notice === "error" ? tr("settings.github.notice.error") : "" }),
+        t.div({}, () => ui.loading ? null : ui.configured ? connected() : connectForm()),
+        t.p({ className: "form-error", role: "alert", hidden: () => !ui.error, textContent: () => ui.error }),
+        t.details({ className: "settings-advanced" },
+            t.summary({ textContent: () => tr("settings.github.advanced") }),
+            t.form({ className: "settings-form", onsubmit: save },
+                field(() => tr("settings.github.appId.label"), t.input({
+                    className: "input mono", inputMode: "numeric", required: true, autocomplete: "off",
+                    value: () => ui.appId, oninput: (e) => { ui.appId = e.target.value.replace(/\D/g, ""); ui.error = "" },
+                })),
+                field(() => tr("settings.github.slug.label"), t.input({
+                    className: "input mono", required: true, autocomplete: "off", spellcheck: false, title: () => tr("settings.github.slug.hint"),
+                    value: () => ui.slug, oninput: (e) => { ui.slug = e.target.value; ui.error = "" },
+                })),
+                field(() => tr("settings.github.key.label"), t.textarea({
+                    className: "input mono settings-key", rows: 4, spellcheck: false, autocomplete: "off",
+                    required: () => !ui.configured,
+                    placeholder: () => tr("settings.github.key.placeholder"),
+                    value: () => ui.key, oninput: (e) => { ui.key = e.target.value; ui.error = "" },
+                })),
+                t.p({ className: "muted", hidden: () => !ui.configured, textContent: () => tr("settings.github.key.keep") }),
+                t.div({ className: "settings-actions" },
+                    t.button({ type: "submit", className: "btn", disabled: () => ui.busy || ui.loading },
+                        () => ui.busy ? [t.span({ className: "spinner" }), t.span({ textContent: () => tr("settings.github.busy") })] : [t.span({ textContent: () => tr("settings.github.save") })]),
+                ),
             ),
         ),
     )
@@ -172,10 +249,12 @@ export function settings() {
 // Cartão da aba Configurações da app: vincula a app a um repo do GitHub.
 export function appGithubCard(name) {
     const base = `/api/apps/${encodeURIComponent(name)}/github`
-    const ui = store({ loading: true, repo: null, installed: false, configured: false, installUrl: "", input: "", busy: false, error: "" })
+    const ui = store({ loading: true, repo: null, installed: false, configured: false, installUrl: "", input: "", busy: false, error: "", repos: [] })
+    const listId = `gh-repos-${name}`
     Promise.all([getJSON(base), getJSON("/api/github")])
         .then(([link, gh]) => {
             Object.assign(ui, { repo: link.repo, installed: link.installed, input: link.repo || "", configured: gh.configured, installUrl: gh.installUrl || "" })
+            if (gh.configured) getJSON("/api/github/repos").then((l) => ui.repos = l).catch(() => {})
         })
         .catch((e) => ui.error = e.message)
         .finally(() => ui.loading = false)
@@ -200,11 +279,13 @@ export function appGithubCard(name) {
         t.form({ className: "rename-form", onsubmit: save },
             t.input({
                 className: "input mono", autocomplete: "off", spellcheck: false, "html-aria-label": () => tr("settings.appGithub.repo.label"),
-                placeholder: () => tr("settings.appGithub.repo.placeholder"), disabled: () => ui.loading || ui.busy,
+                "html-list": listId, type: "search",
+                placeholder: () => tr(ui.repos.length ? "settings.appGithub.repo.pick" : "settings.appGithub.repo.placeholder"), disabled: () => ui.loading || ui.busy,
                 value: () => ui.input, oninput: (e) => { ui.input = e.target.value; ui.error = "" },
             }),
             t.button({ type: "submit", className: "btn", disabled: () => ui.busy || !ui.input.trim() || ui.input.trim() === ui.repo },
                 () => ui.busy ? [t.span({ className: "spinner" }), t.span({ textContent: () => tr("settings.appGithub.busy") })] : [t.span({ textContent: () => tr("settings.appGithub.save") })]),
+            t.datalist({ id: listId }, () => ui.repos.map((r) => t.option({ rid: r.fullName, value: r.fullName }))),
             () => ui.repo ? t.button({ rid: "unlink", type: "button", className: "btn", disabled: () => ui.busy, onclick: unlink, textContent: () => tr("settings.appGithub.unlink") }) : null,
         ),
         t.p({ className: "form-error", role: "alert", hidden: () => !ui.error, textContent: () => ui.error }),

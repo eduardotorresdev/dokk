@@ -574,6 +574,7 @@ func main() {
 		return ok, err
 	}
 	githubRoutes(mux, gh, appExists)
+	manifestRoutes(mux, gh, a, "")
 	execRoutes(mux, a, appExists, client.Exec)
 	oauthRoutes(mux, a, uiHandler(ui))
 	mux.HandleFunc("POST /api/setup", a.setup)

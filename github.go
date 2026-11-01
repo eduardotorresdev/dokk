@@ -44,6 +44,10 @@ type githubConfig struct {
 	AppID      int64  `json:"appId"`
 	Slug       string `json:"slug"`
 	PrivateKey string `json:"privateKey"`
+	// Vêm do manifest flow (não são usados hoje, mas o GitHub só mostra uma vez).
+	ClientID      string `json:"clientId,omitempty"`
+	ClientSecret  string `json:"clientSecret,omitempty"`
+	WebhookSecret string `json:"webhookSecret,omitempty"`
 }
 
 type cachedToken struct {
