@@ -18,7 +18,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,7 +35,7 @@ var (
 	repoRe   = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
 	slugRe   = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62})$`)
 	shaRe    = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
-	tagRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/+-]{0,127}$`)
+	tagRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/+@-]{0,127}$`)
 	imageMax = 512
 )
 
@@ -64,7 +63,7 @@ type github struct {
 	mu     sync.Mutex
 	cfg    githubConfig
 	key    *rsa.PrivateKey
-	links  map[string]string // app → owner/repo
+	links  map[string]appLink // app → repo + formato da tag
 	tokens map[string]cachedToken
 }
 
@@ -88,7 +87,7 @@ func newGitHub(dir, apiBase string) (*github, error) {
 	if apiBase == "" {
 		apiBase = defaultGitHubAPI
 	}
-	g := &github{dir: dir, apiBase: strings.TrimRight(apiBase, "/"), http: &http.Client{Timeout: 20 * time.Second}, now: time.Now, links: map[string]string{}, tokens: map[string]cachedToken{}}
+	g := &github{dir: dir, apiBase: strings.TrimRight(apiBase, "/"), http: &http.Client{Timeout: 20 * time.Second}, now: time.Now, links: map[string]appLink{}, tokens: map[string]cachedToken{}}
 	if err := readJSON(filepath.Join(dir, "github.json"), &g.cfg); err != nil {
 		return nil, err
 	}
@@ -99,12 +98,11 @@ func newGitHub(dir, apiBase string) (*github, error) {
 		}
 		g.key = k
 	}
-	if err := readJSON(filepath.Join(dir, "github-apps.json"), &g.links); err != nil {
+	links, err := loadLinks(filepath.Join(dir, "github-apps.json"))
+	if err != nil {
 		return nil, err
 	}
-	if g.links == nil {
-		g.links = map[string]string{}
-	}
+	g.links = links
 	return g, nil
 }
 
@@ -194,20 +192,34 @@ func (g *github) setConfig(appID int64, slug, privateKey string) error {
 func (g *github) link(app string) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.links[app]
+	return g.links[app].Repo
 }
 
-func (g *github) setLink(app, repo string) error {
+// tagFormat do vínculo (padrão v{version}).
+func (g *github) tagFormat(app string) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	next := map[string]string{}
+	if f := g.links[app].TagFormat; f != "" {
+		return f
+	}
+	return defaultTagFormat
+}
+
+// setLink grava o vínculo; repo vazio desfaz. format vazio = padrão.
+func (g *github) setLink(app, repo, format string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	next := map[string]appLink{}
 	for k, v := range g.links {
 		next[k] = v
+	}
+	if format == defaultTagFormat {
+		format = ""
 	}
 	if repo == "" {
 		delete(next, app)
 	} else {
-		next[app] = repo
+		next[app] = appLink{repo, format}
 	}
 	if err := writeJSONFile(filepath.Join(g.dir, "github-apps.json"), next); err != nil {
 		return err
@@ -306,56 +318,6 @@ func (g *github) installationToken(ctx context.Context, repo string) (string, er
 	g.tokens[repo] = cachedToken{tok.Token, tok.ExpiresAt}
 	g.mu.Unlock()
 	return tok.Token, nil
-}
-
-type releaseJSON struct {
-	Tag        string    `json:"tag"`
-	Name       string    `json:"name"`
-	SHA        string    `json:"sha"`
-	URL        string    `json:"url"`
-	CreatedAt  time.Time `json:"createdAt"`
-	Prerelease bool      `json:"prerelease"`
-}
-
-// releases lista as releases (mais recente primeiro), com o sha da tag.
-func (g *github) releases(ctx context.Context, repo string) ([]releaseJSON, error) {
-	tok, err := g.installationToken(ctx, repo)
-	if err != nil {
-		return nil, err
-	}
-	var rels []struct {
-		TagName    string    `json:"tag_name"`
-		Name       string    `json:"name"`
-		HTMLURL    string    `json:"html_url"`
-		CreatedAt  time.Time `json:"created_at"`
-		Prerelease bool      `json:"prerelease"`
-		Draft      bool      `json:"draft"`
-	}
-	if err := g.call(ctx, "GET", "/repos/"+repo+"/releases?per_page=50", "Bearer "+tok, nil, &rels); err != nil {
-		return nil, err
-	}
-	var tags []struct {
-		Name   string `json:"name"`
-		Commit struct {
-			SHA string `json:"sha"`
-		} `json:"commit"`
-	}
-	if err := g.call(ctx, "GET", "/repos/"+repo+"/tags?per_page=100", "Bearer "+tok, nil, &tags); err != nil {
-		return nil, err
-	}
-	shas := map[string]string{}
-	for _, t := range tags {
-		shas[t.Name] = t.Commit.SHA
-	}
-	out := []releaseJSON{}
-	for _, r := range rels {
-		if r.Draft {
-			continue
-		}
-		out = append(out, releaseJSON{Tag: r.TagName, Name: r.Name, SHA: shas[r.TagName], URL: r.HTMLURL, CreatedAt: r.CreatedAt, Prerelease: r.Prerelease})
-	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
-	return out, nil
 }
 
 var (
@@ -491,16 +453,16 @@ func githubRoutes(mux *http.ServeMux, g *github, appExists func(context.Context,
 	}
 
 	linkJSON := func(ctx context.Context, name string) map[string]any {
-		repo := g.link(name)
+		repo, format := g.link(name), g.tagFormat(name)
 		if repo == "" {
-			return map[string]any{"repo": nil, "installed": false}
+			return map[string]any{"repo": nil, "installed": false, "tagFormat": format}
 		}
 		installed := false
 		if g.configured() {
 			_, err := g.installationToken(ctx, repo)
 			installed = err == nil
 		}
-		return map[string]any{"repo": repo, "installed": installed}
+		return map[string]any{"repo": repo, "installed": installed, "tagFormat": format}
 	}
 	mux.HandleFunc("GET /api/apps/{name}/github", func(w http.ResponseWriter, r *http.Request) {
 		name, ok := app(w, r)
@@ -515,7 +477,8 @@ func githubRoutes(mux *http.ServeMux, g *github, appExists func(context.Context,
 			return
 		}
 		var body struct {
-			Repo string `json:"repo"`
+			Repo      string  `json:"repo"`
+			TagFormat *string `json:"tagFormat"`
 		}
 		json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body)
 		repo := strings.TrimSuffix(strings.TrimSpace(body.Repo), ".git")
@@ -524,7 +487,18 @@ func githubRoutes(mux *http.ServeMux, g *github, appExists func(context.Context,
 			writeError(w, r, http.StatusBadRequest, "err.invalidRepo")
 			return
 		}
-		if err := g.setLink(name, repo); err != nil {
+		format := g.tagFormat(name)
+		if body.TagFormat != nil {
+			format = strings.TrimSpace(*body.TagFormat)
+			if format == "" {
+				format = defaultTagFormat
+			}
+		}
+		if !validTagFormat(format) {
+			writeError(w, r, http.StatusBadRequest, "err.invalidTagFormat")
+			return
+		}
+		if err := g.setLink(name, repo, format); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -535,11 +509,11 @@ func githubRoutes(mux *http.ServeMux, g *github, appExists func(context.Context,
 		if !ok {
 			return
 		}
-		if err := g.setLink(name, ""); err != nil {
+		if err := g.setLink(name, "", ""); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"repo": nil, "installed": false})
+		writeJSON(w, http.StatusOK, map[string]any{"repo": nil, "installed": false, "tagFormat": defaultTagFormat})
 	})
 
 	mux.HandleFunc("GET /api/apps/{name}/github/releases", func(w http.ResponseWriter, r *http.Request) {
@@ -547,7 +521,7 @@ func githubRoutes(mux *http.ServeMux, g *github, appExists func(context.Context,
 		if !ok {
 			return
 		}
-		rels, err := g.releases(r.Context(), repo)
+		rels, err := g.releases(r.Context(), repo, g.tagFormat(r.PathValue("name")))
 		if err != nil {
 			installErr(w, r, err)
 			return
@@ -573,8 +547,11 @@ func githubRoutes(mux *http.ServeMux, g *github, appExists func(context.Context,
 		}
 		tag, sha, image := strings.TrimSpace(body.Tag), strings.TrimSpace(body.SHA), strings.TrimSpace(body.Image)
 		switch {
-		case !tagRe.MatchString(tag) || strings.Contains(tag, "..") || strings.HasSuffix(tag, ".lock") || strings.HasSuffix(tag, "/"):
+		case !validTag(tag):
 			writeError(w, r, http.StatusBadRequest, "err.invalidTag")
+			return
+		case !matchesFormat(g.tagFormat(r.PathValue("name")), tag):
+			writeError(w, r, http.StatusBadRequest, "err.tagFormatMismatch", tag, g.tagFormat(r.PathValue("name")))
 			return
 		case !shaRe.MatchString(sha):
 			writeError(w, r, http.StatusUnprocessableEntity, "err.shaNotFound")

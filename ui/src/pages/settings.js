@@ -246,19 +246,38 @@ export function settings() {
     )
 }
 
+// Próxima versão (patch) a partir da maior estável da lista.
+function nextVersion(versions) {
+    let cur = [0, 0, 0]
+    for (const v of versions) {
+        const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(v || "")
+        if (!m) continue
+        const n = m.slice(1).map(Number)
+        if (n[0] > cur[0] || (n[0] === cur[0] && (n[1] > cur[1] || (n[1] === cur[1] && n[2] > cur[2])))) cur = n
+    }
+    return `${cur[0]}.${cur[1]}.${cur[2] + 1}`
+}
+
 // Cartão da aba Configurações da app: vincula a app a um repo do GitHub.
 export function appGithubCard(name) {
     const base = `/api/apps/${encodeURIComponent(name)}/github`
-    const ui = store({ loading: true, repo: null, installed: false, configured: false, installUrl: "", input: "", busy: false, error: "", repos: [] })
+    const ui = store({ loading: true, repo: null, installed: false, configured: false, installUrl: "", input: "", busy: false, error: "", repos: [], format: "v{version}", formatInput: "v{version}", versions: [] })
     const listId = `gh-repos-${name}`
     Promise.all([getJSON(base), getJSON("/api/github")])
         .then(([link, gh]) => {
             Object.assign(ui, { repo: link.repo, installed: link.installed, input: link.repo || "", configured: gh.configured, installUrl: gh.installUrl || "" })
+            applyFormat(link)
+            loadVersions()
             if (gh.configured) getJSON("/api/github/repos").then((l) => ui.repos = l).catch(() => {})
         })
         .catch((e) => ui.error = e.message)
         .finally(() => ui.loading = false)
 
+    const applyFormat = (link) => { ui.format = ui.formatInput = link.tagFormat || "v{version}" }
+    const loadVersions = () => {
+        ui.versions = []
+        if (ui.repo && ui.installed && ui.configured) getJSON(`${base}/releases`).then((l) => ui.versions = l.map((r) => r.version)).catch(() => {})
+    }
     const run = async (fn) => {
         if (ui.busy) return
         ui.busy = true
@@ -266,11 +285,15 @@ export function appGithubCard(name) {
         try {
             const link = await fn()
             Object.assign(ui, { repo: link.repo, installed: link.installed, input: link.repo || "" })
+            applyFormat(link)
+            loadVersions()
         } catch (err) {
             ui.error = err.message
         } finally { ui.busy = false }
     }
-    const save = (e) => { e.preventDefault(); run(() => api("PUT", base, { repo: ui.input.trim() })) }
+    const save = (e) => { e.preventDefault(); run(() => api("PUT", base, { repo: ui.input.trim(), tagFormat: ui.formatInput.trim() })) }
+    const formatOK = () => (ui.formatInput.trim().match(/\{version\}/g) || []).length === 1
+    const dirty = () => ui.input.trim() !== (ui.repo || "") || (!!ui.input.trim() && ui.formatInput.trim() !== ui.format)
     const unlink = () => run(() => api("DELETE", base))
 
     return t.section({ className: "settings-card" },
@@ -283,10 +306,24 @@ export function appGithubCard(name) {
                 placeholder: () => tr(ui.repos.length ? "settings.appGithub.repo.pick" : "settings.appGithub.repo.placeholder"), disabled: () => ui.loading || ui.busy,
                 value: () => ui.input, oninput: (e) => { ui.input = e.target.value; ui.error = "" },
             }),
-            t.button({ type: "submit", className: "btn", disabled: () => ui.busy || !ui.input.trim() || ui.input.trim() === ui.repo },
+            t.button({ type: "submit", className: "btn", disabled: () => ui.busy || !ui.input.trim() || !formatOK() || !dirty() },
                 () => ui.busy ? [t.span({ className: "spinner" }), t.span({ textContent: () => tr("settings.appGithub.busy") })] : [t.span({ textContent: () => tr("settings.appGithub.save") })]),
             t.datalist({ id: listId }, () => ui.repos.map((r) => t.option({ rid: r.fullName, value: r.fullName }))),
             () => ui.repo ? t.button({ rid: "unlink", type: "button", className: "btn", disabled: () => ui.busy, onclick: unlink, textContent: () => tr("settings.appGithub.unlink") }) : null,
+        ),
+        t.label({ className: "field tag-format" },
+            t.span({ textContent: () => tr("settings.appGithub.format.label") }),
+            t.input({
+                className: "input mono", autocomplete: "off", spellcheck: false, maxLength: 100,
+                placeholder: "v{version}", disabled: () => ui.loading || ui.busy,
+                value: () => ui.formatInput, oninput: (e) => { ui.formatInput = e.target.value; ui.error = "" },
+            }),
+            t.span({
+                className: () => formatOK() ? "muted" : "form-error",
+                textContent: () => formatOK()
+                    ? tr("settings.appGithub.format.next", { tag: ui.formatInput.trim().replace("{version}", nextVersion(ui.versions)) })
+                    : tr("settings.appGithub.format.invalid"),
+            }),
         ),
         t.p({ className: "form-error", role: "alert", hidden: () => !ui.error, textContent: () => ui.error }),
         t.div({ className: "settings-status", hidden: () => ui.loading || !ui.repo }, () => {

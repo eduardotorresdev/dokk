@@ -75,6 +75,9 @@ func (f *fakePanel) server(t *testing.T) *httptest.Server {
 		}
 		json.NewEncoder(w).Encode(map[string]any{"app": app, "action": action})
 	})
+	mux.HandleFunc("GET /api/apps/web/github", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"repo":"acme/web","installed":true,"tagFormat":"v{version}"}`)
+	})
 	mux.HandleFunc("GET /api/apps/web/github/releases", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `[{"tag":"v1.0.0","sha":"0123456789abcdef","url":"https://github.com/acme/web/releases/tag/v1.0.0","createdAt":"2026-10-30T12:00:00Z"},{"tag":"v0.9.0","sha":"fedcba9876543210","url":"https://github.com/acme/web/releases/tag/v0.9.0","createdAt":"2026-10-01T12:00:00Z","prerelease":true}]`)
 	})

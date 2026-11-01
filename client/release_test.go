@@ -75,6 +75,8 @@ type fakeAPI struct {
 	installs []string
 	polls    int
 	auth     string
+	format   string // tagFormat do vínculo ("" = padrão)
+	releases string // corpo de GET .../github/releases
 }
 
 func (f *fakeAPI) server(t *testing.T) *httptest.Server {
@@ -96,8 +98,15 @@ func (f *fakeAPI) server(t *testing.T) *httptest.Server {
 		}
 		json.NewEncoder(w).Encode(map[string]any{"app": app, "action": action})
 	})
+	mux.HandleFunc("GET /api/apps/web/github", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"repo": "acme/web", "installed": true, "tagFormat": f.format})
+	})
 	mux.HandleFunc("GET /api/apps/web/github/releases", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `[{"tag":"v1.0.0","sha":"x"}]`)
+		if f.releases != "" {
+			io.WriteString(w, f.releases)
+			return
+		}
+		io.WriteString(w, `[{"tag":"v1.0.0","version":"1.0.0","sha":"x"}]`)
 	})
 	mux.HandleFunc("POST /api/apps/web/github/releases", func(w http.ResponseWriter, r *http.Request) {
 		var nr NewRelease
@@ -198,6 +207,33 @@ func TestReleaseExistingTag(t *testing.T) {
 	_, err := c.Release(context.Background(), ReleaseOptions{App: "web", Version: "1.0.0", Runner: &fakeRunner{}, Log: io.Discard})
 	if !errors.Is(err, ErrTagExists) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// Monorepo: tag back@x.y.z, a partir da maior versão (com tags sem Release);
+// a imagem docker leva só a versão.
+func TestReleaseTagFormat(t *testing.T) {
+	api := &fakeAPI{format: "back@{version}", releases: `[{"tag":"back@1.9.0","version":"1.9.0","url":"u"},{"tag":"back@1.17.0","version":"1.17.0","url":""},{"tag":"back@2.0.0-rc.1","version":"2.0.0-rc.1"}]`}
+	srv := api.server(t)
+	run := &fakeRunner{remote: "origin/main"}
+	c := &Client{URL: srv.URL, Token: "t"}
+	res, err := c.Release(context.Background(), ReleaseOptions{App: "web", Image: "ghcr.io/acme/back", Runner: run, Log: io.Discard})
+	if err != nil || res.Tag != "back@1.17.1" || res.Image != "ghcr.io/acme/back:1.17.1" || api.created.Tag != "back@1.17.1" {
+		t.Fatalf("res = %+v %v", res, err)
+	}
+	if _, err := c.Release(context.Background(), ReleaseOptions{App: "web", Image: "ghcr.io/acme/back", Version: "1.17.0", Runner: run, Log: io.Discard}); !errors.Is(err, ErrTagExists) {
+		t.Fatalf("existente = %v", err)
+	}
+}
+
+func TestImageTag(t *testing.T) {
+	for in, want := range map[string]string{"v1.2.3": "v1.2.3", "1.17.1": "1.17.1", "back@1.17.1": "1.17.1", "back@1.2.0-rc.1": "1.2.0-rc.1", "latest": "latest"} {
+		if got := ImageTag(in); got != want {
+			t.Errorf("ImageTag(%q) = %q", in, got)
+		}
+	}
+	if FormatTag("back@{version}", "1.0.0") != "back@1.0.0" || FormatTag("", "1.0.0") != "v1.0.0" {
+		t.Error("FormatTag")
 	}
 }
 

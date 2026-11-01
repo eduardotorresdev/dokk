@@ -157,7 +157,7 @@ var mcpTools = []map[string]any{
 		"install":    map[string]any{"type": "boolean", "description": "instalar na app e esperar healthy"},
 		"prerelease": map[string]any{"type": "boolean"},
 	}, "app", "dir")},
-	{"name": "install_release", "description": "Instala uma tag da imagem da app e espera ficar healthy.", "inputSchema": schema(map[string]any{"app": str("nome da app"), "tag": str("tag da imagem, ex. v1.4.0")}, "app", "tag")},
+	{"name": "install_release", "description": "Instala uma tag da imagem da app e espera ficar healthy.", "inputSchema": schema(map[string]any{"app": str("nome da app"), "tag": str("tag da release ou da imagem, ex. v1.4.0, back@1.17.1 ou 1.17.1")}, "app", "tag")},
 	{"name": "build_log", "description": "Log de um build/deploy da app.", "inputSchema": schema(map[string]any{"app": str("nome da app"), "id": str("id do build")}, "app", "id")},
 	{"name": "app_logs", "description": "Últimas linhas do log de runtime da app.", "inputSchema": schema(map[string]any{"app": str("nome da app"), "lines": map[string]any{"type": "integer", "description": "quantas linhas (padrão 200)"}}, "app")},
 	{"name": "start_app", "description": "Inicia a app e espera ficar healthy.", "inputSchema": schema(map[string]any{"app": str("nome da app")}, "app")},

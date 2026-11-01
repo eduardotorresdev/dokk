@@ -120,6 +120,33 @@ func NextVersion(tags []string, bump, explicit string) (string, error) {
 	return cur.String(), nil
 }
 
+// FormatTag preenche o formato de tag da app (ex. back@{version}) com a
+// versão sem "v".
+func FormatTag(format, version string) string {
+	if !strings.Contains(format, "{version}") {
+		format = "v{version}"
+	}
+	return strings.Replace(format, "{version}", version, 1)
+}
+
+var (
+	dockerTagRe  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
+	tailSemverRe = regexp.MustCompile(`v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$`)
+)
+
+// ImageTag é a tag docker de uma tag git: a própria quando o docker aceita
+// (v1.2.3), senão só a versão (back@1.17.1 → 1.17.1).
+func ImageTag(tag string) string {
+	tag = strings.TrimSpace(tag)
+	if dockerTagRe.MatchString(tag) {
+		return tag
+	}
+	if m := tailSemverRe.FindStringSubmatch(tag); m != nil {
+		return m[1]
+	}
+	return tag
+}
+
 // Reporter recebe o andamento da release em passos. Output recebe a saída
 // dos comandos (docker) do passo corrente.
 type Reporter interface {
@@ -192,22 +219,33 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 		} else if ref, ok := dokku.ParseImage(repo); ok {
 			repo = ref.Name()
 		}
+		link, err := c.GithubLink(ctx, o.App)
+		if err != nil {
+			return "", err
+		}
 		rels, err := c.GithubReleases(ctx, o.App)
 		if err != nil {
 			return "", err
 		}
 		tags := make([]string, len(rels))
+		versions := make([]string, len(rels))
 		for i, r := range rels {
 			tags[i] = r.Tag
+			versions[i] = r.Version
+			if versions[i] == "" {
+				versions[i] = r.Tag
+			}
 		}
-		tag, err := NextVersion(tags, o.Bump, o.Version)
+		next, err := NextVersion(versions, o.Bump, o.Version)
 		if err != nil {
 			return "", err
 		}
+		version := strings.TrimPrefix(next, "v")
+		tag := FormatTag(link.TagFormat, version)
 		if slices.Contains(tags, tag) {
 			return "", fmt.Errorf("%s: %w", tag, ErrTagExists)
 		}
-		res.Tag, res.Image = tag, repo+":"+tag
+		res.Tag, res.Image = tag, repo+":"+ImageTag(tag)
 		prev := "nenhuma"
 		if len(tags) > 0 {
 			prev = tags[0]

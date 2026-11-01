@@ -121,7 +121,7 @@ func (c *Client) Status(ctx context.Context, name string) (Status, error) {
 	if out.Version != "" {
 		if rels, err := c.GithubReleases(ctx, name); err == nil {
 			for _, r := range rels {
-				if r.Tag == out.Version {
+				if r.Tag == out.Version || ImageTag(r.Tag) == out.Version {
 					out.Commit, out.Release = r.SHA, r.URL
 					break
 				}
@@ -169,7 +169,7 @@ func (c *Client) ImageForTag(ctx context.Context, app, tag string) (string, erro
 	if i := strings.LastIndex(img, ":"); i > strings.LastIndex(img, "/") {
 		img = img[:i]
 	}
-	return img + ":" + strings.TrimSpace(tag), nil
+	return img + ":" + ImageTag(tag), nil
 }
 
 // InstallTag instala a tag da imagem da app e espera ficar healthy.

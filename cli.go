@@ -551,7 +551,7 @@ func releaseRows(t term, l client.ReleaseList) [][]cell {
 	rows := make([][]cell, 0, len(l.Releases))
 	for _, r := range l.Releases {
 		mark := cell{text: " "}
-		if r.Tag == l.Current {
+		if r.Tag == l.Current || client.ImageTag(r.Tag) == l.Current {
 			mark = cell{pre: t.statusMark("running"), text: ""}
 		}
 		tag := cell{text: r.Tag, style: t.bold}

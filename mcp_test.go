@@ -91,6 +91,9 @@ func TestMCPCreateReleaseProgress(t *testing.T) {
 	mux.HandleFunc("GET /api/apps/web", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"app":{"name":"web","deploy-source":"docker-image","git-sha":"acme/web:v0.1.0","checks":{"status":"healthy"}}}`)
 	})
+	mux.HandleFunc("GET /api/apps/web/github", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"repo":"acme/web","installed":true,"tagFormat":"v{version}"}`)
+	})
 	mux.HandleFunc("GET /api/apps/web/github/releases", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `[{"tag":"v0.1.0"}]`)
 	})

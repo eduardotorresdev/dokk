@@ -171,6 +171,7 @@ type AppStatus struct {
 // GithubRelease é uma release do GitHub vinculada à app.
 type GithubRelease struct {
 	Tag        string `json:"tag"`
+	Version    string `json:"version"` // semver sem prefixo (ex. 1.17.0)
 	Name       string `json:"name"`
 	SHA        string `json:"sha"`
 	URL        string `json:"url"`
@@ -214,6 +215,23 @@ func (c *Client) AppStatus(ctx context.Context, name string) (AppStatus, error) 
 func (c *Client) GithubReleases(ctx context.Context, name string) ([]GithubRelease, error) {
 	var l []GithubRelease
 	err := c.getJSON(ctx, appPath(name, "github", "releases"), &l)
+	return l, err
+}
+
+// GithubLink é o vínculo app ↔ repo do GitHub.
+type GithubLink struct {
+	Repo      string `json:"repo"`
+	Installed bool   `json:"installed"`
+	TagFormat string `json:"tagFormat"` // ex. v{version}, back@{version}
+}
+
+// GithubLink lê GET /api/apps/{name}/github.
+func (c *Client) GithubLink(ctx context.Context, name string) (GithubLink, error) {
+	var l GithubLink
+	err := c.getJSON(ctx, appPath(name, "github"), &l)
+	if l.TagFormat == "" {
+		l.TagFormat = "v{version}"
+	}
 	return l, err
 }
 

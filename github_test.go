@@ -69,7 +69,20 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case r.Method == "GET" && p == "/repos/acme/web/releases":
+		if r.URL.Query().Get("page") != "1" {
+			reply(200, []any{})
+			return
+		}
 		reply(200, f.releases)
+	case r.Method == "GET" && strings.HasPrefix(p, "/repos/acme/web/git/matching-refs/tags/"):
+		prefix := strings.TrimPrefix(p, "/repos/acme/web/git/matching-refs/tags/")
+		out := []map[string]any{}
+		for n, s := range f.tags {
+			if strings.HasPrefix(n, prefix) && r.URL.Query().Get("page") == "1" {
+				out = append(out, map[string]any{"ref": "refs/tags/" + n, "object": map[string]string{"sha": s, "type": "commit"}})
+			}
+		}
+		reply(200, out)
 	case r.Method == "GET" && p == "/repos/acme/web/tags":
 		var out []map[string]any
 		for n, s := range f.tags {
@@ -125,11 +138,14 @@ func (f *fakeGitHub) validJWT(tok string) bool {
 func TestGitHubReleases(t *testing.T) {
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
 	pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
-	fake := &fakeGitHub{t: t, key: &key.PublicKey, tags: map[string]string{"v1.0.0": "1111111111111111111111111111111111111111"},
+	fake := &fakeGitHub{t: t, key: &key.PublicKey, tags: map[string]string{"v1.0.0": "1111111111111111111111111111111111111111", "v1.1.0-rc": "2222222222222222222222222222222222222222",
+		"v0.9.0": "0909090909090909090909090909090909090909", "back@1.17.0": "1717171717171717171717171717171717171717", "back@1.9.0": "1919191919191919191919191919191919191919",
+		"front@2.0.0": "2020202020202020202020202020202020202020", "draft": "dddddddddddddddddddddddddddddddddddddddd"},
 		releases: []map[string]any{
 			{"tag_name": "v1.0.0", "name": "v1.0.0", "html_url": "u1", "created_at": "2026-01-01T00:00:00Z"},
 			{"tag_name": "v1.1.0-rc", "name": "rc", "html_url": "u2", "created_at": "2026-02-01T00:00:00Z", "prerelease": true},
 			{"tag_name": "draft", "draft": true, "created_at": "2026-03-01T00:00:00Z"},
+			{"tag_name": "back@1.17.0", "name": "back 1.17.0", "html_url": "u3", "created_at": "2026-03-02T00:00:00Z"},
 		}}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
@@ -182,7 +198,7 @@ func TestGitHubReleases(t *testing.T) {
 		t.Fatalf("editar sem chave = %s", w.Body)
 	}
 
-	if w := do("GET", "/api/apps/web/github", ""); w.Body.String() != `{"installed":true,"repo":"acme/web"}`+"\n" {
+	if w := do("GET", "/api/apps/web/github", ""); w.Body.String() != `{"installed":true,"repo":"acme/web","tagFormat":"v{version}"}`+"\n" {
 		t.Fatalf("vínculo = %s", w.Body)
 	}
 	if c := do("PUT", "/api/apps/nope/github", `{"repo":"acme/web"}`).Code; c != 404 {
@@ -202,17 +218,22 @@ func TestGitHubReleases(t *testing.T) {
 	w = do("GET", "/api/apps/web/github/releases", "")
 	var rels []releaseJSON
 	json.Unmarshal(w.Body.Bytes(), &rels)
-	if w.Code != 200 || len(rels) != 2 || rels[0].Tag != "v1.1.0-rc" || !rels[0].Prerelease || rels[1].SHA != "1111111111111111111111111111111111111111" {
+	// Só as tags do formato, com ou sem Release, maior versão primeiro.
+	if w.Code != 200 || len(rels) != 3 || rels[0].Tag != "v1.1.0-rc" || !rels[0].Prerelease || rels[1].SHA != "1111111111111111111111111111111111111111" ||
+		rels[1].Version != "1.0.0" || rels[1].URL != "u1" || rels[2].Tag != "v0.9.0" || rels[2].URL != "" {
 		t.Fatalf("releases = %d %s", w.Code, w.Body)
+	}
+	if c := do("POST", "/api/apps/web/github/releases", `{"tag":"back@3.0.0","sha":"abcdef0","image":"x:3"}`).Code; c != 400 {
+		t.Fatalf("tag fora do formato = %d", c)
 	}
 
 	if c := do("POST", "/api/apps/web/github/releases", `{"tag":"v1.0.0","sha":"abcdef0","image":"ghcr.io/acme/web:1"}`).Code; c != 409 {
 		t.Fatalf("tag existente = %d", c)
 	}
-	if c := do("POST", "/api/apps/web/github/releases", `{"tag":"v2","sha":"9999999","image":"ghcr.io/acme/web:2"}`).Code; c != 422 {
+	if c := do("POST", "/api/apps/web/github/releases", `{"tag":"v2.0.0","sha":"9999999","image":"ghcr.io/acme/web:2"}`).Code; c != 422 {
 		t.Fatalf("sha desconhecido = %d", c)
 	}
-	if c := do("POST", "/api/apps/web/github/releases", `{"tag":"v2","sha":"abcdef0","image":""}`).Code; c != 400 {
+	if c := do("POST", "/api/apps/web/github/releases", `{"tag":"v2.0.0","sha":"abcdef0","image":""}`).Code; c != 400 {
 		t.Fatalf("sem imagem = %d", c)
 	}
 	w = do("POST", "/api/apps/web/github/releases", `{"tag":"v2.0.0","sha":"abcdef0","image":"ghcr.io/acme/web:2","notes":"Hotfix","prerelease":true}`)
@@ -231,13 +252,63 @@ func TestGitHubReleases(t *testing.T) {
 		t.Errorf("tokens emitidos = %d", fake.tokens)
 	}
 
+	// Monorepo: formato back@{version}.
+	for _, f := range []string{"back", "{version}{version}", "back@{version}..", "a b{version}"} {
+		if c := do("PUT", "/api/apps/web/github", `{"repo":"acme/web","tagFormat":"`+f+`"}`).Code; c != 400 {
+			t.Errorf("formato %q = %d", f, c)
+		}
+	}
+	if w := do("PUT", "/api/apps/web/github", `{"repo":"acme/web","tagFormat":"back@{version}"}`); !strings.Contains(w.Body.String(), `"tagFormat":"back@{version}"`) {
+		t.Fatalf("formato = %s", w.Body)
+	}
+	// PUT sem tagFormat mantém o atual.
+	if w := do("PUT", "/api/apps/web/github", `{"repo":"acme/web"}`); !strings.Contains(w.Body.String(), `"tagFormat":"back@{version}"`) {
+		t.Fatalf("manter formato = %s", w.Body)
+	}
+	w = do("GET", "/api/apps/web/github/releases", "")
+	rels = nil
+	json.Unmarshal(w.Body.Bytes(), &rels)
+	if len(rels) != 2 || rels[0].Tag != "back@1.17.0" || rels[0].Version != "1.17.0" || rels[0].URL != "u3" || rels[1].Version != "1.9.0" || rels[1].URL != "" {
+		t.Fatalf("releases back@ = %s", w.Body)
+	}
+	if c := do("POST", "/api/apps/web/github/releases", `{"tag":"v9.0.0","sha":"abcdef0","image":"x:9"}`).Code; c != 400 {
+		t.Fatalf("v9.0.0 em app back@ = %d", c)
+	}
+	if c := do("POST", "/api/apps/web/github/releases", `{"tag":"back@1.17.1","sha":"abcdef0","image":"x:1.17.1"}`).Code; c != 200 {
+		t.Fatalf("back@1.17.1 = %d", c)
+	}
+
 	// Vínculos e config sobrevivem a restart; DELETE desfaz o vínculo.
 	g2, err := newGitHub(dir, srv.URL)
-	if err != nil || !g2.configured() || g2.link("web") != "acme/web" {
+	if err != nil || !g2.configured() || g2.link("web") != "acme/web" || g2.tagFormat("web") != "back@{version}" {
 		t.Fatalf("recarregar: %v", err)
 	}
 	do("DELETE", "/api/apps/web/github", "")
 	if w := do("GET", "/api/apps/web/github", ""); !strings.Contains(w.Body.String(), `"repo":null`) {
 		t.Fatalf("depois do DELETE = %s", w.Body)
+	}
+}
+
+func TestTagFormat(t *testing.T) {
+	for tag, want := range map[string]string{"back@1.17.0": "1.17.0", "back@1.2.3-rc.1": "1.2.3-rc.1", "back@1.2": "", "front@1.0.0": "", "back@": ""} {
+		if v, _ := versionOf("back@{version}", tag); v != want && want != "" {
+			t.Errorf("%s = %q", tag, v)
+		}
+		if matchesFormat("back@{version}", tag) != (want != "") {
+			t.Errorf("matches %s", tag)
+		}
+	}
+	if !matchesFormat("release-{version}-final", "release-2.0.0-final") {
+		t.Error("sufixo")
+	}
+	// github-apps.json antigo (só a string do repo) continua valendo.
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "github-apps.json"), []byte(`{"web":"acme/web","api":{"repo":"acme/pbs","tagFormat":"back@{version}"}}`), 0o600)
+	g, err := newGitHub(dir, "")
+	if err != nil || g.link("web") != "acme/web" || g.tagFormat("web") != "v{version}" || g.tagFormat("api") != "back@{version}" {
+		t.Fatalf("legado: %v %+v", err, g.links)
+	}
+	if !versionLess("1.9.0", "1.17.0") || !versionLess("1.2.0-rc", "1.2.0") || versionLess("1.2.0", "1.2.0-rc") {
+		t.Error("versionLess")
 	}
 }
