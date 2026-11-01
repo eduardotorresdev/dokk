@@ -2,5 +2,5 @@
 # stderr
 
  ✗ Uso incorreto
-   uso: dokk install <app> <tag> [--json]
+   uso: dokk install <app> <tag> [--no-hooks] [--json]
 

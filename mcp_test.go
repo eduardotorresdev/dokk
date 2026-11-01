@@ -64,7 +64,7 @@ func TestMCPHandshakeAndList(t *testing.T) {
 	for _, tl := range tools {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "list_apps,app_status,list_releases,create_release,install_release,build_log,app_logs,start_app,stop_app,restart_app,exec,login" {
+	if strings.Join(names, ",") != "list_apps,app_status,list_releases,create_release,install_release,rollback_release,build_log,app_logs,start_app,stop_app,restart_app,exec,login" {
 		t.Errorf("tools = %v", names)
 	}
 	if byID(msgs, 3)["error"] == nil {
@@ -76,8 +76,12 @@ type mcpFakeRunner struct{}
 
 func (mcpFakeRunner) Run(_ context.Context, _ string, out io.Writer, name string, args ...string) error {
 	switch {
+	case name == "git" && args[0] == "rev-parse" && args[1] == "--abbrev-ref":
+		io.WriteString(out, "main\n")
 	case name == "git" && args[0] == "rev-parse":
 		io.WriteString(out, "abc1234\n")
+	case name == "git" && args[0] == "show":
+		io.WriteString(out, "1793000000\n")
 	case name == "git":
 		io.WriteString(out, "origin/main\n")
 	default:

@@ -60,6 +60,7 @@ func main() {
 	host := &hostSampler{}
 	go host.run(ctx, 3*time.Second)
 	releases := newReleaseCache(client)
+	digestTags := &digestTagCache{m: map[string]string{}}
 	go func() {
 		// Aquece o cache das tags logo após a primeira coleta e a cada 5 min.
 		t := time.NewTicker(5 * time.Minute)
@@ -374,7 +375,13 @@ func main() {
 			writeJSON(w, http.StatusOK, map[string]any{"image": ref.Name(), "releases": []dokku.Release{}, "error": errMsg(requestLang(r), err)})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"image": ref.Name(), "current": app.GitSHA, "releases": list})
+		body := map[string]any{"image": ref.Name(), "current": app.GitSHA, "releases": list}
+		if ref.Tag == "" && ref.Digest != "" {
+			if tag := digestTags.resolve(r.Context(), client, ref, list); tag != "" {
+				body["currentTag"] = tag
+			}
+		}
+		writeJSON(w, http.StatusOK, body)
 	})
 
 	// Instala outra versão da mesma imagem (git:from-image). Só aceita o

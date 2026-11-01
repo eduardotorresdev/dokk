@@ -54,7 +54,8 @@ func TestInstallTagAndStatus(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	c := &Client{URL: srv.URL, Token: "t"}
-	img, err := c.InstallTag(context.Background(), "web", "v2", time.Millisecond, nil)
+	r, err := c.InstallTag(context.Background(), "v2", InstallOptions{App: "web", PollInterval: time.Millisecond, Reporter: PlainReporter{io.Discard}})
+	img := r.Image
 	if err != nil || img != "ghcr.io/acme/web:v2" || installed != `{"image":"ghcr.io/acme/web:v2"}` {
 		t.Fatalf("img %q err %v body %s", img, err, installed)
 	}

@@ -225,15 +225,50 @@ In CI, set `DOKK_URL` and `DOKK_TOKEN` (an API token, `dokk_...`) instead of log
 | `dokk logs <app> [-n N]` | `app_logs {app, lines?}` | Last lines of the app log |
 | `dokk start\|stop\|restart <app>` | `start_app` / `stop_app` / `restart_app` | Runs the action and waits for it (start/restart: until healthy) |
 | `dokk exec <app> [--run] [--process web] -- <cmd…>` | `exec {app, command, mode?, process?}` | Runs a command **inside the app's container** (never on the host); the CLI exits with the remote exit code |
-| `dokk releases <app>` | `list_releases` | GitHub releases, the installed one marked |
-| `dokk install <app> <tag>` | `install_release {app, tag}` | Installs a tag of the app's image and waits until healthy |
-| `dokk release --app <app> …` | `create_release {app, bump\|version, dir, …}` | Next semver tag → commit pushed? → `docker buildx build --platform linux/amd64 --push` → GitHub release → optional install |
+| `dokk releases <app>` | `list_releases` | GitHub releases, the installed one marked (also when the app runs an image by digest) |
+| `dokk install <app> <tag> [--no-hooks]` | `install_release {app, tag, dir?, skip_hooks?}` | Installs a tag of the app's image, with the `dokk.yml` hooks, and waits until healthy |
+| `dokk rollback <app> [version] [--no-hooks]` | `rollback_release {app, version?, dir?, skip_hooks?}` | Installs the given version or, without one, the highest stable registry version below the current one |
+| `dokk release --app <app> …` | `create_release {app, bump\|version, dir, …}` | Next version → commit pushed? → `docker buildx build --platform linux/amd64 --push` → GitHub release → optional install |
 | `dokk build-log <app> <id>` | `build_log` | Log of a build |
 | `dokk help` | `tools/list` | List of commands |
 
 Everything that lists or shows something takes `--json` for scripts. On an interactive terminal the CLI uses colors, spinners and boxes; when piped, in CI (`CI=true`), with `NO_COLOR` or `TERM=dumb` it prints plain text with timestamps. The MCP server never prints colors: tool results are plain text, with ANSI stripped from logs and command output, and errors say what to do next.
 
-`dokk release` flags: `--app`, `--bump patch|minor|major`, `--version`, `--dir`, `--notes`, `--install`, `--prerelease`, `--image` (override the image repository), `--platform`, `--json`. It needs `git` and `docker buildx` logged in to the app's registry, an app that deploys from an image and is linked to a GitHub repository. A non-zero exit code means failure.
+`dokk release` flags: `--app`, `--bump patch|minor|major`, `--version`, `--dir`, `--notes`, `--install`, `--prerelease`, `--image` (override the image repository), `--platform`, `--no-hooks`, `--json`. It needs `git` and `docker buildx` logged in to the app's registry, an app that deploys from an image and is linked to a GitHub repository. A non-zero exit code means failure.
+
+**Versions.** The next version starts from the highest of the app's git tags (in its tag format, e.g. `back@{version}`) and the semver tags already in the image's registry, so a registry ahead of the GitHub releases is never overwritten. On the remote's default branch the version is a stable bump (`--bump`, default patch). On any other branch it is a **hash version**, `<next patch of the highest stable>-sha.<UTC commit time YYYYMMDDHHMMSS>.g<sha7>`, published as a prerelease; `--bump` is refused there. `--version` always wins.
+
+### `dokk.yml`
+
+The client looks for `dokk.yml` (or `dokk.yaml`, `dokk.json`) from `--dir` (default: the current directory) up to the git root:
+
+```yaml
+apps:
+  pbs-back:
+    build: { context: ., dockerfile: api/Dockerfile }   # default: context = dir, dockerfile = <context>/Dockerfile
+    hooks:
+      pre-install: ops/dokk/backup-pb.sh                 # relative to the repo root
+      post-install: ""                                   # optional
+    config: { PBS_BUILD_VERSION: "{version}" }           # set before each install
+  pbs-back-qa:
+    build: { context: ., dockerfile: api/Dockerfile }
+```
+
+The parser covers only this subset of YAML: maps (block and `{ a: b }`), strings (plain, `'single'`, `"double"`) and lists of strings, with `#` comments.
+
+**Hooks run on the client machine** (your laptop, the MCP server's machine or the CI runner), never on the server: `sh -c <hook>` with the repo root as cwd, the output in the progress. They wrap every install: `dokk install`, `dokk release --install`, `dokk rollback` and the MCP tools. A failing `pre-install` aborts before anything touches the app, and the error names the hook; a failing `post-install` marks the result as failed (the install already happened). Besides the process environment, hooks get:
+
+| Variable | Value |
+| --- | --- |
+| `ACTION` | `install` or `rollback` |
+| `APP`, `DOKK_URL` | the app and the panel |
+| `FROM_IMAGE`, `TO_IMAGE` | the current and the target image |
+| `FROM_VERSION`, `TO_VERSION` | their tags (for an image pinned by digest, the tag the registry resolves for it) |
+| `FROM_DIGEST`, `TO_DIGEST` | the digest, when the image is pinned as `repo@sha256:…` |
+
+`--no-hooks` skips them only after typing the app name (or with `--yes` in scripts); the MCP `skip_hooks` parameter is meant to be used only when the user asks.
+
+**`config`** sets app variables before each install, without a restart, so the new image already starts with them. Placeholders: `{version}` (semver, e.g. `2.9.1`), `{tag}` (git tag, e.g. `back@2.9.1`), `{image}` and `{sha}` (the release commit).
 
 GitHub Actions example:
 
@@ -254,10 +289,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install dokk
+      - name: Install dokk (client only)
         run: |
-          curl -fsSL https://github.com/eduardotorresdev/dokk/releases/latest/download/dokk_linux_amd64.tar.gz | tar -xz dokk
-          sudo mv dokk /usr/local/bin/
+          curl -fsSL https://eduardotorresdev.github.io/dokk/install.sh | DOKK_CLIENT_ONLY=1 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Release
         env:
           DOKK_URL: https://dokk.example.com

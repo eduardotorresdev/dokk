@@ -33,6 +33,7 @@ type cli struct {
 	runner         client.Runner
 	poll           time.Duration
 	newClient      func() (*client.Client, error)
+	hooks          client.HookRunner // nil = sh -c de verdade
 }
 
 type command struct {
@@ -55,8 +56,9 @@ func init() {
 		{"restart", "<app>", "reinicia a app e espera ficar healthy", actionCmd("restart")},
 		{"exec", "<app> [--run] [--process web] -- <cmd…>", "roda um comando dentro do container da app", (*cli).exec},
 		{"releases", "<app> [--json]", "releases do GitHub da app", (*cli).releases},
-		{"install", "<app> <tag> [--json]", "instala uma tag da imagem e espera ficar healthy", (*cli).install},
-		{"release", "--app <app> [--bump …|--version …] [--install]", "build + push + release no GitHub (+ install)", (*cli).release},
+		{"install", "<app> <tag> [--no-hooks] [--json]", "instala uma tag da imagem (com os hooks do dokk.yml) e espera ficar healthy", (*cli).install},
+		{"rollback", "<app> [versão] [--no-hooks] [--json]", "volta para a versão pedida ou para a maior anterior à atual", (*cli).rollback},
+		{"release", "--app <app> [--bump …|--version …] [--install]", "build + push + release no GitHub (+ install); fora da main, versão por hash", (*cli).release},
 		{"build-log", "<app> <id> [--json]", "log de um build", (*cli).buildLog},
 		{"mcp", "", "servidor MCP por stdio (para agentes)", nil},
 		{"help", "", "esta ajuda", (*cli).help},
@@ -571,30 +573,119 @@ func releaseRows(t term, l client.ReleaseList) [][]cell {
 	return rows
 }
 
+// hookFlags são as flags comuns a todo install.
+type hookFlags struct {
+	dir     *string
+	noHooks *bool
+	yes     *bool
+}
+
+func addHookFlags(fs *flag.FlagSet) hookFlags {
+	return hookFlags{fs.String("dir", ".", ""), fs.Bool("no-hooks", false, ""), fs.Bool("yes", false, "")}
+}
+
+// installOptions lê o dokk.yml (subindo de --dir) e confirma o --no-hooks:
+// pular os hooks exige --yes ou digitar o nome da app.
+func (c *cli) installOptions(app string, f hookFlags) (client.InstallOptions, bool) {
+	o := client.InstallOptions{App: app, Hooks: c.hooks, PollInterval: c.poll}
+	cfg, err := client.FindConfig(*f.dir)
+	if err != nil {
+		c.fail("dokk.yml inválido", err)
+		return o, false
+	}
+	o.Config = cfg
+	h := cfg.App(app).Hooks
+	if *f.noHooks && (h.PreInstall != "" || h.PostInstall != "") {
+		if !*f.yes {
+			fmt.Fprintf(c.stderr, "\n %s --no-hooks pula os hooks de %s (pre-install: %q, post-install: %q).\n Digite o nome da app para confirmar: ",
+				c.err.bad("!"), c.err.bold(app), h.PreInstall, h.PostInstall)
+			line, _ := bufio.NewReader(c.stdin).ReadString('\n')
+			if strings.TrimSpace(line) != app {
+				fmt.Fprintln(c.stderr)
+				c.fail("Install cancelado", errors.New("--no-hooks não confirmado (sem terminal, passe --yes junto)"))
+				return o, false
+			}
+		}
+		o.SkipHooks = true
+	}
+	return o, true
+}
+
+func (c *cli) installSummary(r client.InstallResult) {
+	from := r.FromVersion
+	if from == "" {
+		from = r.FromImage
+	}
+	hooks := ""
+	if r.HooksRun {
+		hooks = " " + c.err.muted("· hooks ok")
+	}
+	fmt.Fprintf(c.stderr, "\n %s %s %s %s%s\n\n", c.err.statusMark("healthy"), c.err.bold(r.App),
+		c.err.muted(from+" →"), c.err.accent(r.Image), hooks)
+}
+
 func (c *cli) install(ctx context.Context, args []string) int {
 	fs := c.flags("install")
 	asJSON := fs.Bool("json", false, "")
+	hf := addHookFlags(fs)
 	pos, _, err := parse(fs, args, 2)
 	if err != nil || len(pos) != 2 {
 		return c.usage("install", err)
+	}
+	app, tag := pos[0], pos[1]
+	o, ok := c.installOptions(app, hf)
+	if !ok {
+		return 1
 	}
 	cl, ok := c.connect()
 	if !ok {
 		return 1
 	}
-	app, tag := pos[0], pos[1]
 	u := c.ui()
 	u.Header("install", app+" · "+cl.URL)
-	u.Step("Instalando " + tag + " em " + app)
-	image, err := cl.InstallTag(ctx, app, tag, c.poll, u.Note)
-	u.Done("healthy", err)
+	o.Reporter = u
+	r, err := cl.InstallTag(ctx, tag, o)
 	if err != nil {
 		return c.fail("Install de "+tag+" falhou", err)
 	}
 	if *asJSON {
-		return c.printJSON(map[string]any{"app": app, "tag": tag, "image": image, "status": "healthy"})
+		return c.printJSON(r)
 	}
-	fmt.Fprintf(c.stderr, "\n %s %s %s %s\n\n", c.err.statusMark("healthy"), c.err.bold(app), c.err.muted("em"), c.err.accent(image))
+	c.installSummary(r)
+	return 0
+}
+
+func (c *cli) rollback(ctx context.Context, args []string) int {
+	fs := c.flags("rollback")
+	asJSON := fs.Bool("json", false, "")
+	hf := addHookFlags(fs)
+	pos, _, err := parse(fs, args, 2)
+	if err != nil || len(pos) < 1 || len(pos) > 2 {
+		return c.usage("rollback", err)
+	}
+	app, version := pos[0], ""
+	if len(pos) == 2 {
+		version = pos[1]
+	}
+	o, ok := c.installOptions(app, hf)
+	if !ok {
+		return 1
+	}
+	cl, ok := c.connect()
+	if !ok {
+		return 1
+	}
+	u := c.ui()
+	u.Header("rollback", app+" · "+cl.URL)
+	o.Reporter = u
+	r, err := cl.Rollback(ctx, version, o)
+	if err != nil {
+		return c.fail("Rollback de "+app+" falhou", err)
+	}
+	if *asJSON {
+		return c.printJSON(r)
+	}
+	c.installSummary(r)
 	return 0
 }
 
@@ -624,15 +715,15 @@ func (c *cli) release(ctx context.Context, args []string) int {
 	fs := c.flags("release")
 	var o client.ReleaseOptions
 	fs.StringVar(&o.App, "app", "", "")
-	fs.StringVar(&o.Bump, "bump", "patch", "")
+	fs.StringVar(&o.Bump, "bump", "", "")
 	fs.StringVar(&o.Version, "version", "", "")
-	fs.StringVar(&o.Dir, "dir", ".", "")
 	fs.StringVar(&o.Notes, "notes", "", "")
 	fs.BoolVar(&o.Install, "install", false, "")
 	fs.BoolVar(&o.Prerelease, "prerelease", false, "")
 	fs.StringVar(&o.Image, "image", "", "")
 	fs.StringVar(&o.Platform, "platform", "linux/amd64", "")
 	asJSON := fs.Bool("json", false, "")
+	hf := addHookFlags(fs)
 	pos, _, err := parse(fs, args, 1)
 	if err == nil && o.App == "" && len(pos) == 1 {
 		o.App, pos = pos[0], nil
@@ -640,6 +731,12 @@ func (c *cli) release(ctx context.Context, args []string) int {
 	if err != nil || o.App == "" || len(pos) > 0 {
 		return c.usage("release", err)
 	}
+	o.Dir = *hf.dir
+	iopts, ok := c.installOptions(o.App, hf)
+	if !ok {
+		return 1
+	}
+	o.Config, o.SkipHooks, o.Hooks = iopts.Config, iopts.SkipHooks, c.hooks
 	cl, ok := c.connect()
 	if !ok {
 		return 1

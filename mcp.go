@@ -45,7 +45,8 @@ func runMCP(args []string) int {
 type mcpServer struct {
 	client    *client.Client
 	clientErr error
-	runner    client.Runner // nil = comandos reais
+	runner    client.Runner     // nil = comandos reais
+	hooks     client.HookRunner // nil = sh -c de verdade
 	open      func(string) error
 	out       io.Writer
 	log       io.Writer
@@ -148,7 +149,7 @@ var mcpTools = []map[string]any{
 	{"name": "list_apps", "description": "Lista as apps do Dokku com status dos checks.", "inputSchema": schema(map[string]any{})},
 	{"name": "app_status", "description": "Detalhe de uma app: imagem atual, checks, processos e a ação em andamento.", "inputSchema": schema(map[string]any{"app": str("nome da app")}, "app")},
 	{"name": "list_releases", "description": "Releases do GitHub vinculadas à app (mais recente primeiro).", "inputSchema": schema(map[string]any{"app": str("nome da app")}, "app")},
-	{"name": "create_release", "description": "Calcula a versão, confere que o commit está no remoto, faz build+push da imagem (linux/amd64), cria a release no GitHub e opcionalmente instala até ficar healthy.", "inputSchema": schema(map[string]any{
+	{"name": "create_release", "description": "Calcula a versão (máximo entre as tags git e as do registry; fora da branch padrão, versão por hash e prerelease), confere que o commit está no remoto, faz build+push da imagem (linux/amd64, build do dokk.yml), cria a release no GitHub e opcionalmente instala até ficar healthy, com os hooks do dokk.yml.", "inputSchema": schema(map[string]any{
 		"app":        str("nome da app"),
 		"bump":       map[string]any{"type": "string", "enum": []string{"patch", "minor", "major"}, "description": "incremento semver (padrão patch)"},
 		"version":    str("versão explícita, ex. 1.4.0 (ganha de bump)"),
@@ -156,8 +157,10 @@ var mcpTools = []map[string]any{
 		"notes":      str("notas da release"),
 		"install":    map[string]any{"type": "boolean", "description": "instalar na app e esperar healthy"},
 		"prerelease": map[string]any{"type": "boolean"},
+		"skip_hooks": map[string]any{"type": "boolean", "description": "NUNCA use sem o usuário pedir explicitamente: pula os hooks pre-install/post-install do dokk.yml (ex. o backup antes do install)."},
 	}, "app", "dir")},
-	{"name": "install_release", "description": "Instala uma tag da imagem da app e espera ficar healthy.", "inputSchema": schema(map[string]any{"app": str("nome da app"), "tag": str("tag da release ou da imagem, ex. v1.4.0, back@1.17.1 ou 1.17.1")}, "app", "tag")},
+	{"name": "install_release", "description": "Instala uma tag da imagem da app e espera ficar healthy. Roda os hooks do dokk.yml (pre-install/post-install) nesta máquina; um pre-install com erro aborta sem tocar na app.", "inputSchema": schema(map[string]any{"app": str("nome da app"), "tag": str("tag da release ou da imagem, ex. v1.4.0, back@1.17.1 ou 1.17.1"), "dir": str("diretório do repositório, para achar o dokk.yml com os hooks (absoluto; padrão: o cwd do servidor MCP)"), "skip_hooks": map[string]any{"type": "boolean", "description": "NUNCA use sem o usuário pedir explicitamente: pula os hooks pre-install/post-install do dokk.yml (ex. o backup antes do install)."}}, "app", "tag")},
+	{"name": "rollback_release", "description": "Volta a app para uma versão anterior: a pedida ou, sem versão, a maior versão estável do registry menor que a atual. Passa pelos hooks do dokk.yml com ACTION=rollback.", "inputSchema": schema(map[string]any{"app": str("nome da app"), "version": str("versão/tag de destino (opcional)"), "dir": str("diretório do repositório, para achar o dokk.yml com os hooks (absoluto; padrão: o cwd do servidor MCP)"), "skip_hooks": map[string]any{"type": "boolean", "description": "NUNCA use sem o usuário pedir explicitamente: pula os hooks pre-install/post-install do dokk.yml (ex. o backup antes do install)."}}, "app")},
 	{"name": "build_log", "description": "Log de um build/deploy da app.", "inputSchema": schema(map[string]any{"app": str("nome da app"), "id": str("id do build")}, "app", "id")},
 	{"name": "app_logs", "description": "Últimas linhas do log de runtime da app.", "inputSchema": schema(map[string]any{"app": str("nome da app"), "lines": map[string]any{"type": "integer", "description": "quantas linhas (padrão 200)"}}, "app")},
 	{"name": "start_app", "description": "Inicia a app e espera ficar healthy.", "inputSchema": schema(map[string]any{"app": str("nome da app")}, "app")},
@@ -187,6 +190,7 @@ type toolArgs struct {
 	Command    json.RawMessage `json:"command"`
 	Mode       string          `json:"mode"`
 	Process    string          `json:"process"`
+	SkipHooks  bool            `json:"skip_hooks"`
 }
 
 // commandArgv aceita "ls -la" (via sh -c) ou ["ls","-la"].
@@ -365,9 +369,14 @@ func (s *mcpServer) call(ctx context.Context, raw json.RawMessage) map[string]an
 		if r := need("app", "dir"); r != nil {
 			return r
 		}
+		cfg, err := client.FindConfig(a.Dir)
+		if err != nil {
+			return toolErr("dokk.yml inválido", err)
+		}
 		res, err := c.Release(ctx, client.ReleaseOptions{
 			App: a.App, Bump: a.Bump, Version: a.Version, Dir: a.Dir, Notes: a.Notes,
 			Install: a.Install, Prerelease: a.Prerelease, Reporter: client.PlainReporter{W: pw}, Runner: s.runner,
+			Config: cfg, SkipHooks: a.SkipHooks, Hooks: s.hooks,
 		})
 		if err != nil {
 			return toolErr("release falhou", err)
@@ -381,11 +390,28 @@ func (s *mcpServer) call(ctx context.Context, raw json.RawMessage) map[string]an
 		if r := need("app", "tag"); r != nil {
 			return r
 		}
-		image, err := c.InstallTag(ctx, a.App, a.Tag, 0, pw.note)
+		o, err := s.installOptions(a, pw)
+		if err != nil {
+			return toolErr("dokk.yml inválido", err)
+		}
+		r, err := c.InstallTag(ctx, a.Tag, o)
 		if err != nil {
 			return toolErr("install falhou", err)
 		}
-		return toolText(fmt.Sprintf("%s instalada em %s e healthy.", image, a.App), false)
+		return toolText(installText(r), false)
+	case "rollback_release":
+		if r := need("app"); r != nil {
+			return r
+		}
+		o, err := s.installOptions(a, pw)
+		if err != nil {
+			return toolErr("dokk.yml inválido", err)
+		}
+		r, err := c.Rollback(ctx, a.Version, o)
+		if err != nil {
+			return toolErr("rollback falhou", err)
+		}
+		return toolText(installText(r), false)
 	case "build_log":
 		if r := need("app", "id"); r != nil {
 			return r
@@ -454,4 +480,28 @@ func (s *mcpServer) login(ctx context.Context, url string, pw *progressWriter) m
 	s.client, s.clientErr = c, nil
 	s.cmu.Unlock()
 	return toolText("Logado em "+c.URL+".", false)
+}
+
+// installOptions monta o install com os hooks do dokk.yml de a.Dir.
+func (s *mcpServer) installOptions(a toolArgs, pw *progressWriter) (client.InstallOptions, error) {
+	cfg, err := client.FindConfig(a.Dir)
+	return client.InstallOptions{
+		App: a.App, Config: cfg, SkipHooks: a.SkipHooks, Hooks: s.hooks,
+		Reporter: client.PlainReporter{W: pw},
+	}, err
+}
+
+func installText(r client.InstallResult) string {
+	from := r.FromVersion
+	if from == "" {
+		from = r.FromImage
+	}
+	t := fmt.Sprintf("%s: %s → %s, healthy.", r.App, from, r.Image)
+	if r.Action == "rollback" {
+		t = "Rollback de " + t
+	}
+	if r.HooksRun {
+		t += " Hooks do dokk.yml ok."
+	}
+	return t
 }

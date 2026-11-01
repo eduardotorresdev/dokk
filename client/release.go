@@ -48,6 +48,11 @@ type ReleaseOptions struct {
 	Image      string // repositório da imagem; vazio = o da imagem atual da app
 	Platform   string // padrão linux/amd64
 
+	// Config é o dokk.yml (build e hooks); nil = build de Dir/Dockerfile, sem hooks.
+	Config    *Config
+	SkipHooks bool
+	Hooks     HookRunner // padrão ShellHook
+
 	Log          io.Writer // sem Reporter: saída em texto simples (padrão os.Stderr)
 	Reporter     Reporter  // andamento por passos; padrão PlainReporter{Log}
 	Runner       Runner    // padrão ExecRunner
@@ -57,11 +62,13 @@ type ReleaseOptions struct {
 
 // ReleaseResult descreve o que foi publicado.
 type ReleaseResult struct {
-	Tag       string `json:"tag"`
-	SHA       string `json:"sha"`
-	Image     string `json:"image"`
-	URL       string `json:"url"`
-	Installed bool   `json:"installed"`
+	Tag        string `json:"tag"`
+	SHA        string `json:"sha"`
+	Branch     string `json:"branch,omitempty"`
+	Prerelease bool   `json:"prerelease,omitempty"`
+	Image      string `json:"image"`
+	URL        string `json:"url"`
+	Installed  bool   `json:"installed"`
 }
 
 var semverRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?$`)
@@ -204,6 +211,11 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 		return err
 	}
 
+	git := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		err := o.Runner.Run(ctx, o.Dir, &out, "git", args...)
+		return strings.TrimSpace(out.String()), err
+	}
 	err := step("Resolvendo versão", func() (string, error) {
 		repo := o.Image
 		if repo == "" {
@@ -219,6 +231,15 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 		} else if ref, ok := dokku.ParseImage(repo); ok {
 			repo = ref.Name()
 		}
+		sha, err := git("rev-parse", "HEAD")
+		if err != nil || sha == "" {
+			return "", fmt.Errorf("lendo o commit atual: %w", err)
+		}
+		res.SHA = sha
+		branch, def := currentBranch(git), defaultBranch(git)
+		res.Branch = branch
+		onDefault := branch == def
+
 		link, err := c.GithubLink(ctx, o.App)
 		if err != nil {
 			return "", err
@@ -228,19 +249,49 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 			return "", err
 		}
 		tags := make([]string, len(rels))
-		versions := make([]string, len(rels))
+		// A base é o máximo entre as tags git da app e as tags semver do
+		// registry (o registry pode estar à frente das releases).
+		versions := c.registryVersions(ctx, o.App)
 		for i, r := range rels {
 			tags[i] = r.Tag
-			versions[i] = r.Version
-			if versions[i] == "" {
-				versions[i] = r.Tag
+			v := r.Version
+			if v == "" {
+				if pv, ok := parseVersion(r.Tag); ok {
+					v = fmt.Sprintf("%d.%d.%d", pv.core[0], pv.core[1], pv.core[2])
+					if pv.pre != "" {
+						v += "-" + pv.pre
+					}
+				}
 			}
+			versions = append(versions, v)
 		}
-		next, err := NextVersion(versions, o.Bump, o.Version)
-		if err != nil {
-			return "", err
+		var version string
+		switch {
+		case o.Version != "":
+			next, err := NextVersion(versions, "", o.Version)
+			if err != nil {
+				return "", err
+			}
+			version = strings.TrimPrefix(next, "v")
+		case !onDefault:
+			if o.Bump != "" && o.Bump != "patch" {
+				return "", fmt.Errorf("--bump %s só vale na branch padrão (%s); em %s a versão é por hash", o.Bump, def, branch)
+			}
+			ts, err := git("show", "-s", "--format=%ct", "HEAD")
+			sec, perr := strconv.ParseInt(ts, 10, 64)
+			if err != nil || perr != nil {
+				return "", fmt.Errorf("lendo a data do commit: %v", errors.Join(err, perr))
+			}
+			version = HashVersion(versions, time.Unix(sec, 0), sha)
+			o.Prerelease = true
+		default:
+			next, err := NextVersion(versions, o.Bump, "")
+			if err != nil {
+				return "", err
+			}
+			version = strings.TrimPrefix(next, "v")
 		}
-		version := strings.TrimPrefix(next, "v")
+		res.Prerelease = o.Prerelease
 		tag := FormatTag(link.TagFormat, version)
 		if slices.Contains(tags, tag) {
 			return "", fmt.Errorf("%s: %w", tag, ErrTagExists)
@@ -250,7 +301,11 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 		if len(tags) > 0 {
 			prev = tags[0]
 		}
-		return fmt.Sprintf("%s (anterior: %s)", tag, prev), nil
+		kind := ""
+		if !onDefault && o.Version == "" {
+			kind = ", por hash em " + branch
+		}
+		return fmt.Sprintf("%s (anterior: %s%s)", tag, prev, kind), nil
 	})
 	if err != nil {
 		return res, err
@@ -259,11 +314,6 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 	// Commit precisa existir no remoto (a tag é criada pelo GitHub no sha).
 	err = step("Conferindo commit no remoto", func() (string, error) {
 		var out bytes.Buffer
-		if err := o.Runner.Run(ctx, o.Dir, &out, "git", "rev-parse", "HEAD"); err != nil {
-			return "", fmt.Errorf("lendo o commit atual: %w", err)
-		}
-		res.SHA = strings.TrimSpace(out.String())
-		out.Reset()
 		if err := o.Runner.Run(ctx, o.Dir, &out, "git", "branch", "-r", "--contains", res.SHA); err != nil || strings.TrimSpace(out.String()) == "" {
 			return "", fmt.Errorf("commit %s: %w", short(res.SHA), ErrNotPushed)
 		}
@@ -274,8 +324,14 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 	}
 
 	err = step("Build e push de "+res.Image, func() (string, error) {
-		if err := o.Runner.Run(ctx, o.Dir, rep.Output(), "docker", "buildx", "build",
-			"--platform", o.Platform, "-t", res.Image, "--push", "."); err != nil {
+		args := []string{"buildx", "build", "--platform", o.Platform, "-t", res.Image, "--push"}
+		if o.Config != nil {
+			context, dockerfile := o.Config.BuildPaths(o.App, o.Dir)
+			args = append(args, "-f", dockerfile, context)
+		} else {
+			args = append(args, ".")
+		}
+		if err := o.Runner.Run(ctx, o.Dir, rep.Output(), "docker", args...); err != nil {
 			return "", fmt.Errorf("build da imagem: %w", err)
 		}
 		return o.Platform, nil
@@ -298,19 +354,34 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 		return res, err
 	}
 
-	err = step("Instalando em "+o.App, func() (string, error) {
-		if err := c.Install(ctx, o.App, res.Image); err != nil {
-			return "", fmt.Errorf("install: %w", err)
-		}
-		wctx, cancel := context.WithTimeout(ctx, o.InstallWait)
-		defer cancel()
-		if err := c.WaitHealthy(wctx, o.App, o.PollInterval, rep.Note); err != nil {
-			return "", err
-		}
-		res.Installed = true
-		return "healthy", nil
+	ir, err := c.Deploy(ctx, InstallOptions{
+		App: o.App, Image: res.Image, Tag: res.Tag, SHA: res.SHA, Config: o.Config, SkipHooks: o.SkipHooks,
+		Reporter: rep, Hooks: o.Hooks, PollInterval: o.PollInterval, Wait: o.InstallWait,
 	})
+	res.Installed = ir.Installed
 	return res, err
+}
+
+// currentBranch é a branch do checkout; destacado (CI), a do GitHub Actions.
+func currentBranch(git func(...string) (string, error)) string {
+	b, err := git("rev-parse", "--abbrev-ref", "HEAD")
+	if err == nil && b != "" && b != "HEAD" {
+		return b
+	}
+	for _, k := range []string{"GITHUB_HEAD_REF", "GITHUB_REF_NAME"} {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return b
+}
+
+// defaultBranch é a branch padrão do remoto (origin/HEAD); sem ela, main.
+func defaultBranch(git func(...string) (string, error)) string {
+	if b, err := git("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil && b != "" {
+		return strings.TrimPrefix(b, "origin/")
+	}
+	return "main"
 }
 
 func short(sha string) string {

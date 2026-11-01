@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 )
 
 // Erros com significado próprio: as camadas (CLI, MCP) traduzem em "o que
@@ -105,7 +104,7 @@ func (c *Client) Apps(ctx context.Context) ([]App, error) {
 type Status struct {
 	App     App     `json:"app"`
 	Action  *Action `json:"action,omitempty"`
-	Version string  `json:"version,omitempty"` // tag da imagem atual
+	Version string  `json:"version,omitempty"` // tag da imagem atual (por digest: a tag resolvida ou o digest curto)
 	Commit  string  `json:"commit,omitempty"`  // sha da release do GitHub dessa tag
 	Release string  `json:"release,omitempty"` // URL da release
 }
@@ -117,7 +116,7 @@ func (c *Client) Status(ctx context.Context, name string) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	out := Status{App: st.App, Action: st.Action, Version: st.App.Tag()}
+	out := Status{App: st.App, Action: st.Action, Version: c.CurrentVersion(ctx, st.App)}
 	if out.Version != "" {
 		if rels, err := c.GithubReleases(ctx, name); err == nil {
 			for _, r := range rels {
@@ -148,7 +147,7 @@ func (c *Client) Releases(ctx context.Context, name string) (ReleaseList, error)
 		out.Releases = []GithubRelease{}
 	}
 	if st, err := c.AppStatus(ctx, name); err == nil {
-		out.Current = st.App.Tag()
+		out.Current = c.CurrentVersion(ctx, st.App)
 	}
 	return out, nil
 }
@@ -170,22 +169,6 @@ func (c *Client) ImageForTag(ctx context.Context, app, tag string) (string, erro
 		img = img[:i]
 	}
 	return img + ":" + ImageTag(tag), nil
-}
-
-// InstallTag instala a tag da imagem da app e espera ficar healthy.
-// Devolve a imagem instalada.
-func (c *Client) InstallTag(ctx context.Context, app, tag string, every time.Duration, progress func(string)) (string, error) {
-	if tag == "" {
-		return "", errors.New("tag obrigatória")
-	}
-	image, err := c.ImageForTag(ctx, app, tag)
-	if err != nil {
-		return "", err
-	}
-	if err := c.Install(ctx, app, image); err != nil {
-		return image, err
-	}
-	return image, c.WaitHealthy(ctx, app, every, progress)
 }
 
 // Session é quem está autenticado.

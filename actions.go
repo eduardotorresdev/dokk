@@ -138,3 +138,30 @@ func (rc *releaseCache) warm(ctx context.Context, apps []dokku.AppWithHistory) {
 		}
 	}
 }
+
+// digestTagCache lembra a tag de cada digest (repo@sha256 → tag). Um digest
+// não muda de conteúdo; só a falta de resposta é tentada de novo.
+type digestTagCache struct {
+	mu sync.Mutex
+	m  map[string]string
+}
+
+func (d *digestTagCache) resolve(ctx context.Context, c *dokku.Client, ref dokku.ImageRef, tags []dokku.Release) string {
+	key := ref.Name() + "@" + ref.Digest
+	d.mu.Lock()
+	tag, ok := d.m[key]
+	d.mu.Unlock()
+	if ok {
+		return tag
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	tag, err := c.TagForDigest(ctx, ref, tags, 15)
+	if err != nil || tag == "" {
+		return ""
+	}
+	d.mu.Lock()
+	d.m[key] = tag
+	d.mu.Unlock()
+	return tag
+}

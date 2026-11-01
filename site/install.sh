@@ -2,8 +2,10 @@
 # dokk installer: downloads the latest release, installs /usr/local/bin/dokk
 # and starts it as a systemd service.
 #
-# On macOS it only installs the client binary (dokk release / dokk mcp) to
-# /usr/local/bin, or ~/.local/bin when that is not writable:
+# On macOS, and on Linux in client-only mode (DOKK_CLIENT_ONLY=1, or automatic
+# when not running as root, e.g. a CI runner), it only installs the client
+# binary (dokk release / dokk mcp) to /usr/local/bin, or ~/.local/bin when that
+# is not writable:
 #
 #   curl -fsSL https://eduardotorresdev.github.io/dokk/install.sh | sh
 #
@@ -13,6 +15,7 @@
 #   DOKK_VERSION=v0.1.0      install a specific version (default: latest)
 #   DOKK_ADDR=0.0.0.0:7070   address the panel listens on (default: 127.0.0.1:7070)
 #   DOKK_NO_SERVICE=1        only install the binary, no systemd unit
+#   DOKK_CLIENT_ONLY=1       client only: no root, no systemd, no Dokku
 set -eu
 
 REPO="eduardotorresdev/dokk"
@@ -26,17 +29,20 @@ die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 case "$(uname -s)" in
   Linux)
     OS=linux
-    [ "$(id -u)" -eq 0 ] || die "run as root: curl -fsSL https://eduardotorresdev.github.io/dokk/install.sh | sudo sh"
+    CLIENT_ONLY="${DOKK_CLIENT_ONLY:-}"
+    [ "$(id -u)" -eq 0 ] || CLIENT_ONLY=1
     ;;
   Darwin)
     OS=darwin
-    if [ ! -w /usr/local/bin ] && [ "$(id -u)" -ne 0 ]; then
-      BIN="$HOME/.local/bin/dokk"
-      mkdir -p "$HOME/.local/bin"
-    fi
+    CLIENT_ONLY=1
     ;;
   *) die "unsupported OS: $(uname -s) (Linux and macOS only)" ;;
 esac
+
+if [ -n "$CLIENT_ONLY" ] && [ ! -w /usr/local/bin ]; then
+  BIN="$HOME/.local/bin/dokk"
+  mkdir -p "$HOME/.local/bin"
+fi
 
 case "$(uname -m)" in
   x86_64 | amd64) ARCH=amd64 ;;
@@ -87,7 +93,7 @@ install -m 0755 "$TMP/x/dokk" "$BIN.new"
 mv "$BIN.new" "$BIN"
 say "Installed $("$BIN" -version) to $BIN"
 
-if [ "$OS" = "darwin" ]; then
+if [ -n "$CLIENT_ONLY" ]; then
   case ":$PATH:" in
     *":$(dirname "$BIN"):"*) ;;
     *) printf "\nAdd %s to your PATH:\n  export PATH=\"%s:\$PATH\"\n" "$(dirname "$BIN")" "$(dirname "$BIN")" ;;

@@ -255,3 +255,41 @@ func (c *Client) Install(ctx context.Context, app, image string) error {
 	_, err := c.Runner.Run(ctx, "dokku", "git:from-image", app, image)
 	return err
 }
+
+// manifestAccept cobre manifest único e lista/índice (multi-arch), para o
+// digest do HEAD ser o mesmo que o docker grava em repo@sha256:….
+const manifestAccept = "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json"
+
+// TagForDigest procura, entre as max tags mais novas, a que aponta para
+// ref.Digest (um HEAD de manifest por tag). "" quando não acha ou quando o
+// registry é o Docker Hub (fora do escopo: o pbs usa ghcr).
+func (c *Client) TagForDigest(ctx context.Context, ref ImageRef, tags []Release, max int) (string, error) {
+	if ref.Digest == "" || ref.Registry == "docker.io" {
+		return "", nil
+	}
+	token, err := c.registryToken(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+	for i, t := range tags {
+		if i == max {
+			break
+		}
+		u := fmt.Sprintf("https://%s/v2/%s/manifests/%s", ref.Registry, ref.Repo, url.PathEscape(t.Tag))
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", manifestAccept)
+		res, err := httpClient.Do(req)
+		if err != nil {
+			return "", err
+		}
+		res.Body.Close()
+		if res.StatusCode == http.StatusOK && res.Header.Get("Docker-Content-Digest") == ref.Digest {
+			return t.Tag, nil
+		}
+	}
+	return "", nil
+}

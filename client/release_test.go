@@ -49,6 +49,7 @@ type fakeRunner struct {
 	mu       sync.Mutex
 	calls    []call
 	remote   string // saída de git branch -r --contains
+	branch   string // branch do checkout (padrão main)
 	buildErr error
 }
 
@@ -58,6 +59,16 @@ func (f *fakeRunner) Run(_ context.Context, dir string, out io.Writer, name stri
 	line := name + " " + strings.Join(args, " ")
 	f.calls = append(f.calls, call{dir, line})
 	switch {
+	case strings.HasPrefix(line, "git rev-parse --abbrev-ref"):
+		branch := f.branch
+		if branch == "" {
+			branch = "main"
+		}
+		io.WriteString(out, branch+"\n")
+	case strings.HasPrefix(line, "git symbolic-ref"):
+		io.WriteString(out, "origin/main\n")
+	case strings.HasPrefix(line, "git show"):
+		io.WriteString(out, "1793361600\n") // 2026-10-30 12:00:00 UTC
 	case strings.HasPrefix(line, "git rev-parse"):
 		io.WriteString(out, "abcdef1234567890\n")
 	case strings.HasPrefix(line, "git branch -r"):

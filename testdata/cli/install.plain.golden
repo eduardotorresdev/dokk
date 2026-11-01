@@ -1,10 +1,10 @@
 # stdout
 # stderr
 dokk install web · http://dokk.test
-14:05:09 1. Instalando v1.1.0 em web…
+14:05:09 1. Instalando ghcr.io/acme/web:v1.1.0 em web…
 14:05:09    · install…
 14:05:09    · healthy
-14:05:09 ✓ 1. Instalando v1.1.0 em web  healthy  0ms
+14:05:09 ✓ 1. Instalando ghcr.io/acme/web:v1.1.0 em web  healthy  0ms
 
- ● web em ghcr.io/acme/web:v1.1.0
+ ● web v1.0.0 → ghcr.io/acme/web:v1.1.0
 

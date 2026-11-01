@@ -86,6 +86,12 @@ func (f *fakePanel) server(t *testing.T) *httptest.Server {
 		json.NewDecoder(r.Body).Decode(&nr)
 		json.NewEncoder(w).Encode(client.CreatedRelease{Tag: nr.Tag, URL: "https://github.com/acme/web/releases/tag/" + nr.Tag})
 	})
+	mux.HandleFunc("GET /api/apps/web/releases", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{"image": "ghcr.io/acme/web", "current": webApp()["git-sha"],
+			"releases": []map[string]string{{"tag": "v1.0.0"}, {"tag": "v0.9.0"}}})
+	})
 	mux.HandleFunc("POST /api/apps/web/install", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ Image string }
 		json.NewDecoder(r.Body).Decode(&b)
