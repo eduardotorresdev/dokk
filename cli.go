@@ -62,6 +62,7 @@ func init() {
 		{"config", "get|set|unset builder [valor] · list", "config desta máquina (~/.config/dokk/config.json): builder = auto|docker|podman|caminho", (*cli).config},
 		{"build-log", "<app> <id> [--json]", "log de um build", (*cli).buildLog},
 		{"mcp", "", "servidor MCP por stdio (para agentes)", nil},
+		{"version", "", "versão deste binário", (*cli).version},
 		{"help", "", "esta ajuda", (*cli).help},
 	}
 }
@@ -104,6 +105,11 @@ func (c *cli) main(ctx context.Context, args []string) int {
 	}
 	c.ui().Error("Comando desconhecido", fmt.Errorf("%q não é um comando do dokk", args[0]))
 	return 2
+}
+
+func (c *cli) version(_ context.Context, _ []string) int {
+	fmt.Fprintln(c.stdout, "dokk", version)
+	return 0
 }
 
 func (c *cli) ui() *ui { return newUIWith(c.stderr, c.err) }

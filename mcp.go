@@ -114,6 +114,7 @@ func (s *mcpServer) serve(ctx context.Context, in io.Reader) error {
 				"protocolVersion": pv,
 				"capabilities":    map[string]any{"tools": map[string]any{}},
 				"serverInfo":      map[string]any{"name": "dokk", "version": version},
+				"instructions":    mcpInstructions,
 			}, nil)
 		case "ping":
 			s.reply(req.ID, map[string]any{}, nil)
@@ -144,6 +145,27 @@ func schema(props map[string]any, required ...string) map[string]any {
 }
 
 func str(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+
+// mcpInstructions vai no initialize: o agente recebe o fluxo sem precisar
+// ler o README (mesmo conteúdo de site/llms.txt, resumido).
+const mcpInstructions = `dokk: painel sobre o Dokku. Estas ferramentas falam com um painel remoto; o build roda NESTA máquina.
+
+Antes de tudo: sem credencial, as ferramentas pedem login. Chame login {url} (abre o navegador; o usuário autoriza) ou peça ao usuário para rodar "dokk login <url>".
+
+Fluxo de release:
+1. list_apps / app_status para achar a app e ver a imagem atual.
+2. list_releases para ver as versões (a instalada vem marcada).
+3. create_release {app, dir, bump?|version?, install?}: dir é o caminho absoluto do repositório. O commit precisa estar no remoto (faça push antes). Na branch padrão a versão é estável (bump, padrão patch); em outra branch é uma versão por hash, publicada como prerelease, e bump é recusado.
+4. install_release {app, tag, dir} ou rollback_release {app, version?, dir} para trocar a versão instalada. Esperam até healthy.
+
+Regras:
+- Não crie release nem instale sem o usuário pedir. Prefira confirmar app e versão antes de instalar em produção.
+- skip_hooks: NUNCA use sem o usuário pedir explicitamente. Os hooks do dokk.yml (ex. backup antes do install) rodam nesta máquina, nunca no servidor.
+- exec roda DENTRO do container da app, não no host. mode "run" sobe um container descartável.
+- Builder (docker buildx, podman ou auto) é desta máquina: config {action:get|set|unset, key:"builder"}. Login no registry é da máquina (docker login / podman login); o erro diz o comando.
+- Erros dizem o próximo passo; leia antes de tentar de novo.
+
+Referência completa: https://eduardotorresdev.github.io/dokk/llms.txt`
 
 var mcpTools = []map[string]any{
 	{"name": "list_apps", "description": "Lista as apps do Dokku com status dos checks.", "inputSchema": schema(map[string]any{})},

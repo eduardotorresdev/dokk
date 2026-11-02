@@ -59,6 +59,9 @@ func TestMCPHandshakeAndList(t *testing.T) {
 	if init["protocolVersion"] != "2025-03-26" {
 		t.Errorf("init = %v", init)
 	}
+	if ins, _ := init["instructions"].(string); !strings.Contains(ins, "create_release") || !strings.Contains(ins, "skip_hooks") {
+		t.Errorf("instructions = %q", ins)
+	}
 	tools := byID(msgs, 2)["result"].(map[string]any)["tools"].([]any)
 	names := []string{}
 	for _, tl := range tools {

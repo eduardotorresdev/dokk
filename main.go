@@ -30,7 +30,9 @@ var uiFiles embed.FS
 
 func main() {
 	// Subcomandos clientes (falam com um dokk remoto): ver cli.go.
-	if len(os.Args) > 1 && isCLICommand(os.Args[1]) {
+	// Qualquer argumento posicional é subcomando: um nome desconhecido
+	// ("dokk version") dá erro em vez de subir um segundo painel.
+	if len(os.Args) > 1 && (isCLICommand(os.Args[1]) || !strings.HasPrefix(os.Args[1], "-")) {
 		os.Exit(runCLI(os.Args[1:]))
 	}
 

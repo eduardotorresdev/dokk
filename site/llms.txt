@@ -1,0 +1,88 @@
+# dokk
+
+> dokk is a single Go binary: a web panel over Dokku on the server, and a client (CLI + MCP server) on your machine or CI runner. The client builds the app image locally, pushes it to the registry, has the panel create the git tag and the release on GitHub or GitLab, and installs that version on Dokku.
+
+Who does what:
+- Server (the panel): talks to Dokku, to the GitHub App / GitLab OAuth app and to the registry. Clients never hold GitHub/GitLab credentials.
+- Client (`dokk` CLI or `dokk mcp`): runs `git`, the image build (docker buildx or podman) and the `dokk.yml` hooks on the machine it runs on, never on the server.
+
+## Setup on the client machine
+
+```sh
+curl -fsSL https://eduardotorresdev.github.io/dokk/install.sh | DOKK_CLIENT_ONLY=1 sh   # ~/.local/bin/dokk; on macOS client-only is automatic
+dokk login https://dokk.example.com    # browser login (OAuth 2.1 + PKCE); saves ~/.config/dokk/credentials.json
+claude mcp add --scope user dokk -- dokk mcp   # MCP server over stdio, same credential
+```
+
+In CI use `DOKK_URL` and `DOKK_TOKEN` (an API token `dokk_...`, created in the panel) instead of `dokk login`.
+
+The MCP server sends a short version of this guide in its `initialize` response (`instructions`).
+
+## Release flow (agent)
+
+1. `list_apps`, then `app_status {app}`: find the app and its current image.
+2. `list_releases {app}`: versions of the linked repository, newest first, the installed one marked.
+3. Push the commit first. `create_release {app, dir, bump?|version?, notes?, install?}`: `dir` is the absolute path of the repository.
+   - Version = next after the highest of the app's git tags and the semver tags already in the registry.
+   - On the default branch: stable bump (`bump` patch|minor|major, default patch).
+   - On any other branch: hash version `<next patch>-sha.<UTC commit time>.g<sha7>`, published as a prerelease. `bump` is refused there.
+   - `version` always wins.
+4. `install_release {app, tag, dir}`, or `rollback_release {app, version?, dir}` (no version: highest stable below the current one). Both wait until the app is healthy.
+
+CLI equivalent: `dokk release --app <app> --bump minor --install`, `dokk install <app> <tag>`, `dokk rollback <app> [version]`.
+
+## Rules for agents
+
+- Do not create a release or install unless the user asked for it. Confirm the app and the version before installing in production.
+- Never pass `skip_hooks` (CLI `--no-hooks`) unless the user explicitly asks: hooks such as a database backup before install would be skipped.
+- `exec` runs inside the app's container, never on the host. `mode: "enter"` (default) uses a running container; `mode: "run"` starts a throwaway one from the app's image.
+- Registry login belongs to the machine (`docker login ghcr.io`, `podman login registry.gitlab.com`). When a push is refused, the error names the command to run.
+- Errors say what to do next (for example "call the login tool with the panel url"). Read them before retrying.
+
+## MCP tools
+
+| Tool | Arguments | What it does |
+| --- | --- | --- |
+| `login` | `url` | Browser login to a panel; saves the credential |
+| `list_apps` | | Apps with status, image and URL |
+| `app_status` | `app` | Image, version, commit, URL, processes, checks, running action |
+| `list_releases` | `app` | Releases of the linked repo (GitHub or GitLab) |
+| `create_release` | `app`, `dir`, `bump?`, `version?`, `notes?`, `install?`, `prerelease?`, `builder?`, `skip_hooks?` | Version → commit on remote? → build + push (linux/amd64) → tag + release → optional install |
+| `install_release` | `app`, `tag`, `dir?`, `skip_hooks?` | Install a tag of the app's image with hooks, wait until healthy |
+| `rollback_release` | `app`, `version?`, `dir?`, `skip_hooks?` | Install a previous version with hooks (`ACTION=rollback`) |
+| `build_log` | `app`, `id` | Log of a build/deploy |
+| `app_logs` | `app`, `lines?` | Last lines of the runtime log (default 200) |
+| `start_app` / `stop_app` / `restart_app` | `app` | Run the action and wait (start/restart: until healthy) |
+| `exec` | `app`, `command` (string → `sh -c`, or argv list), `mode?`, `process?` | Command inside the app's container |
+| `config` | `action` get\|set\|unset, `key` "builder", `value?` | This machine's builder: docker, podman, auto or a binary path |
+
+## dokk.yml (in the repository, optional)
+
+Looked up from `dir` up to the git root. Only this YAML subset: maps, strings, lists of strings, `#` comments.
+
+```yaml
+apps:
+  web:
+    build: { context: ., dockerfile: api/Dockerfile }   # default: context = dir, dockerfile = <context>/Dockerfile
+    hooks:
+      pre-install: ops/backup.sh      # sh -c, cwd = repo root; a failure aborts before touching the app
+      post-install: ""                # a failure marks the install as failed (it already happened)
+    config: { BUILD_VERSION: "{version}" }   # app env set before each install; {version} {tag} {image} {sha}
+```
+
+Hook environment: `ACTION` (install|rollback), `APP`, `DOKK_URL`, `FROM_IMAGE`, `TO_IMAGE`, `FROM_VERSION`, `TO_VERSION`, `FROM_DIGEST`, `TO_DIGEST`.
+
+## Builder (per machine, never in dokk.yml)
+
+Precedence: `builder` argument / `--builder` > `DOKK_BUILDER` > `~/.config/dokk/config.json` > `auto` (docker buildx if it works, else podman).
+
+## Git providers (one-time setup in the panel, done by a person)
+
+- GitHub: Settings → "Connect to GitHub" creates a private GitHub App (manifest flow), then install it on the repositories.
+- GitLab (gitlab.com or self-managed): Settings → GitLab URL, create an OAuth application with the values the card shows (Redirect URI `<panel>/gitlab/callback`, Confidential, scope `api`), paste the ID and Secret, then "Connect to GitLab".
+- Each app is linked to one repository in its Settings tab, with a tag format such as `v{version}` or `back@{version}` (monorepos).
+
+## More
+
+- [README](https://github.com/eduardotorresdev/dokk/blob/main/README.md): server install, flags, systemd, security, every CLI command
+- [Install script](https://eduardotorresdev.github.io/dokk/install.sh)

@@ -256,6 +256,18 @@ func TestCLILogsAndHelp(t *testing.T) {
 	}
 }
 
+// Um subcomando desconhecido não pode cair no servidor do painel: foi assim
+// que um "dokk version" no host subiu um segundo painel na porta do serviço.
+func TestCLIVersionAndUnknown(t *testing.T) {
+	srv := (&fakePanel{}).server(t)
+	if r := runCmd(t, srv, false, "version"); r.code != 0 || !strings.HasPrefix(r.stdout, "dokk ") {
+		t.Errorf("version: %+v", r)
+	}
+	if r := runCmd(t, srv, false, "versão"); r.code != 2 || !strings.Contains(r.stderr, "não é um comando") {
+		t.Errorf("desconhecido: %+v", r)
+	}
+}
+
 func TestParseInterleaved(t *testing.T) {
 	fs := flag.NewFlagSet("x", flag.ContinueOnError)
 	n := fs.Int("n", 0, "")

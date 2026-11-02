@@ -338,6 +338,8 @@ MCP in Claude Code (log in first with `dokk login`, or ask Claude to call the `l
 claude mcp add dokk -- dokk mcp
 ```
 
+The MCP server sends a short usage guide in its `initialize` response, so the agent knows the release flow and the rules (no installs nobody asked for, never `skip_hooks` unless asked). For an agent without the MCP, or to paste into a prompt, the full guide is at [`llms.txt`](https://eduardotorresdev.github.io/dokk/llms.txt).
+
 ## Release process
 
 Releases are built by GitHub Actions. Push a tag and the workflow builds `linux/amd64`, `linux/arm64`, `darwin/amd64` and `darwin/arm64` archives, generates `checksums.txt` and publishes a GitHub Release:
