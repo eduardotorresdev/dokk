@@ -4,7 +4,7 @@ import { errText, fmtDate, fmtDateTime, fmtTime, i18n, register, tr, trn } from 
 import en from "../locales/en/app.js"
 import es from "../locales/es/app.js"
 import ptBR from "../locales/pt-BR/app.js"
-import { appGithubCard } from "./settings.js"
+import { appRepoCard } from "./settings.js"
 
 register({ en, es, "pt-BR": ptBR })
 
@@ -655,7 +655,7 @@ function settingsPanel(name, data) {
             ),
             t.p({ className: () => rn.error ? "form-error" : "muted", textContent: () => errText(rn.error) || tr("app.settings.rename.hint") }),
         ),
-        appGithubCard(name),
+        appRepoCard(name),
         t.section({ className: "danger-zone" },
             t.h3({ textContent: () => tr("app.settings.danger.title") }),
             t.div({ className: "danger-row" },

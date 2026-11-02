@@ -22,6 +22,7 @@ var versionRe = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?$`)
 // appLink é o vínculo app → repo. No disco, versões antigas guardavam só a
 // string do repo; loadLinks aceita os dois.
 type appLink struct {
+	Provider  string `json:"provider,omitempty"` // github (vazio, legado) ou gitlab
 	Repo      string `json:"repo"`
 	TagFormat string `json:"tagFormat,omitempty"`
 }

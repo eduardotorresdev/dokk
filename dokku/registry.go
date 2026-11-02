@@ -129,11 +129,12 @@ func dockerHubReleases(ctx context.Context, ref ImageRef) ([]Release, error) {
 	return out, nil
 }
 
-// Outros registries (ghcr...): API v2 com token, usando o login que o dokku
-// já tem em ~dokku/.docker/config.json. A API não traz datas; as tags vão
+// Outros registries (ghcr, GitLab...): API v2 com o token que o próprio
+// registry indica (WWW-Authenticate), usando o login que o dokku já tem em
+// ~dokku/.docker/config.json. A API não traz datas; as tags vão
 // ordenadas por versão, mais nova primeiro.
 func (c *Client) registryReleases(ctx context.Context, ref ImageRef) ([]Release, error) {
-	token, err := c.registryToken(ctx, ref)
+	auth, err := c.registryAuthHeader(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -146,11 +147,11 @@ func (c *Client) registryReleases(ctx context.Context, ref ImageRef) ([]Release,
 		var body struct {
 			Tags []string `json:"tags"`
 		}
-		u := fmt.Sprintf("https://%s/v2/%s/tags/list?n=%d", ref.Registry, ref.Repo, tagPageSize)
+		u := fmt.Sprintf("%s://%s/v2/%s/tags/list?n=%d", registryScheme, ref.Registry, ref.Repo, tagPageSize)
 		if last != "" {
 			u += "&last=" + url.QueryEscape(last)
 		}
-		if err := getJSON(ctx, u, "Bearer "+token, &body); err != nil {
+		if err := getJSON(ctx, u, auth, &body); err != nil {
 			return nil, err
 		}
 		all = append(all, body.Tags...)
@@ -171,19 +172,99 @@ func (c *Client) registryReleases(ctx context.Context, ref ImageRef) ([]Release,
 	return out, nil
 }
 
-func (c *Client) registryToken(ctx context.Context, ref ImageRef) (string, error) {
-	u := fmt.Sprintf("https://%s/token?scope=%s&service=%s", ref.Registry, url.QueryEscape("repository:"+ref.Repo+":pull"), ref.Registry)
+// registryScheme é https; os testes trocam por http (httptest).
+var registryScheme = "https"
+
+// registryAuthHeader descobre como autenticar no registry pelo protocolo da
+// API v2: GET /v2/ sem credencial → 401 com WWW-Authenticate. Bearer (ghcr,
+// GitLab, Docker Hub, Harbor...): pede o token no realm com service e scope
+// do repo, com o login do dokku em Basic quando há. Basic: manda o login
+// direto. 200: registry aberto. Devolve o valor do cabeçalho Authorization
+// ("" = sem auth).
+func (c *Client) registryAuthHeader(ctx context.Context, ref ImageRef) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryScheme+"://"+ref.Registry+"/v2/", nil)
+	if err != nil {
+		return "", err
+	}
+	res, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	res.Body.Close()
+	basic := c.registryAuth(ref.Registry)
+	switch {
+	case res.StatusCode == http.StatusOK:
+		return "", nil
+	case res.StatusCode != http.StatusUnauthorized:
+		return "", &RegistryStatusError{Status: res.Status}
+	}
+	scheme, params := parseChallenge(res.Header.Get("WWW-Authenticate"))
+	switch scheme {
+	case "basic":
+		if basic == "" {
+			return "", &RegistryStatusError{Status: res.Status}
+		}
+		return "Basic " + basic, nil
+	case "bearer":
+	default:
+		return "", &RegistryStatusError{Status: res.Status}
+	}
+	realm, err := url.Parse(params["realm"])
+	if err != nil || realm.Host == "" || (realm.Scheme != "https" && realm.Scheme != registryScheme) {
+		return "", fmt.Errorf("registry %s: realm inválido no WWW-Authenticate", ref.Registry)
+	}
+	q := realm.Query()
+	if params["service"] != "" {
+		q.Set("service", params["service"])
+	}
+	q.Set("scope", "repository:"+ref.Repo+":pull")
+	realm.RawQuery = q.Encode()
 	auth := ""
-	if basic := c.registryAuth(ref.Registry); basic != "" {
+	if basic != "" {
 		auth = "Basic " + basic
 	}
 	var body struct {
-		Token string `json:"token"`
+		Token       string `json:"token"`
+		AccessToken string `json:"access_token"`
 	}
-	if err := getJSON(ctx, u, auth, &body); err != nil {
+	if err := getJSON(ctx, realm.String(), auth, &body); err != nil {
 		return "", err
 	}
-	return body.Token, nil
+	if body.Token == "" {
+		body.Token = body.AccessToken
+	}
+	if body.Token == "" {
+		return "", fmt.Errorf("registry %s: resposta de token vazia", ref.Registry)
+	}
+	return "Bearer " + body.Token, nil
+}
+
+// parseChallenge lê `Bearer realm="…",service="…",scope="…"`.
+func parseChallenge(h string) (string, map[string]string) {
+	scheme, rest, _ := strings.Cut(strings.TrimSpace(h), " ")
+	params := map[string]string{}
+	for rest = strings.TrimSpace(rest); rest != ""; {
+		k, v, ok := strings.Cut(rest, "=")
+		if !ok {
+			break
+		}
+		k = strings.ToLower(strings.TrimSpace(k))
+		v = strings.TrimSpace(v)
+		if strings.HasPrefix(v, `"`) {
+			end := strings.Index(v[1:], `"`)
+			if end < 0 {
+				params[k] = v[1:]
+				break
+			}
+			params[k], rest = v[1:end+1], v[end+2:]
+		} else {
+			val, after, _ := strings.Cut(v, ",")
+			params[k], rest = strings.TrimSpace(val), after
+		}
+		rest = strings.TrimLeft(strings.TrimSpace(rest), ",")
+		rest = strings.TrimSpace(rest)
+	}
+	return strings.ToLower(scheme), params
 }
 
 // registryAuth devolve o "auth" (base64 de usuário:senha) do docker login
@@ -287,7 +368,7 @@ func (c *Client) TagForDigest(ctx context.Context, ref ImageRef, tags []Release,
 	if ref.Digest == "" || ref.Registry == "docker.io" {
 		return "", nil
 	}
-	token, err := c.registryToken(ctx, ref)
+	auth, err := c.registryAuthHeader(ctx, ref)
 	if err != nil {
 		return "", err
 	}
@@ -295,12 +376,14 @@ func (c *Client) TagForDigest(ctx context.Context, ref ImageRef, tags []Release,
 		if i == max {
 			break
 		}
-		u := fmt.Sprintf("https://%s/v2/%s/manifests/%s", ref.Registry, ref.Repo, url.PathEscape(t.Tag))
+		u := fmt.Sprintf("%s://%s/v2/%s/manifests/%s", registryScheme, ref.Registry, ref.Repo, url.PathEscape(t.Tag))
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
 		if err != nil {
 			return "", err
 		}
-		req.Header.Set("Authorization", "Bearer "+token)
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
 		req.Header.Set("Accept", manifestAccept)
 		res, err := httpClient.Do(req)
 		if err != nil {

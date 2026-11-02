@@ -156,7 +156,8 @@ func TestGitHubReleases(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	githubRoutes(mux, g, func(_ context.Context, name string) (bool, error) { return name == "web" || name == "api", nil })
+	githubRoutes(mux, g)
+	repoRoutes(mux, providers{links: g, gh: g}, func(_ context.Context, name string) (bool, error) { return name == "web" || name == "api", nil })
 	do := func(method, path, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.Header.Set("X-Dokk-Lang", "en")
@@ -198,7 +199,7 @@ func TestGitHubReleases(t *testing.T) {
 		t.Fatalf("editar sem chave = %s", w.Body)
 	}
 
-	if w := do("GET", "/api/apps/web/github", ""); w.Body.String() != `{"installed":true,"repo":"acme/web","tagFormat":"v{version}"}`+"\n" {
+	if w := do("GET", "/api/apps/web/github", ""); w.Body.String() != `{"installed":true,"provider":"github","repo":"acme/web","tagFormat":"v{version}"}`+"\n" {
 		t.Fatalf("vínculo = %s", w.Body)
 	}
 	if c := do("PUT", "/api/apps/nope/github", `{"repo":"acme/web"}`).Code; c != 404 {
@@ -237,7 +238,7 @@ func TestGitHubReleases(t *testing.T) {
 		t.Fatalf("sem imagem = %d", c)
 	}
 	w = do("POST", "/api/apps/web/github/releases", `{"tag":"v2.0.0","sha":"abcdef0","image":"ghcr.io/acme/web:2","notes":"Hotfix","prerelease":true}`)
-	if w.Code != 200 || w.Body.String() != `{"tag":"v2.0.0","url":"https://github.com/acme/web/releases/tag/v2.0.0"}`+"\n" {
+	if w.Code != 200 || w.Body.String() != `{"provider":"github","tag":"v2.0.0","url":"https://github.com/acme/web/releases/tag/v2.0.0"}`+"\n" {
 		t.Fatalf("criar release = %d %s", w.Code, w.Body)
 	}
 	if fake.tags["v2.0.0"] != "abcdef0123456789abcdef0123456789abcdef01" {
@@ -280,7 +281,7 @@ func TestGitHubReleases(t *testing.T) {
 
 	// Vínculos e config sobrevivem a restart; DELETE desfaz o vínculo.
 	g2, err := newGitHub(dir, srv.URL)
-	if err != nil || !g2.configured() || g2.link("web") != "acme/web" || g2.tagFormat("web") != "back@{version}" {
+	if err != nil || !g2.configured() || g2.link("web").Repo != "acme/web" || g2.link("web").Provider != "github" || g2.tagFormat("web") != "back@{version}" {
 		t.Fatalf("recarregar: %v", err)
 	}
 	do("DELETE", "/api/apps/web/github", "")
@@ -305,7 +306,7 @@ func TestTagFormat(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "github-apps.json"), []byte(`{"web":"acme/web","api":{"repo":"acme/pbs","tagFormat":"back@{version}"}}`), 0o600)
 	g, err := newGitHub(dir, "")
-	if err != nil || g.link("web") != "acme/web" || g.tagFormat("web") != "v{version}" || g.tagFormat("api") != "back@{version}" {
+	if err != nil || g.link("web").Repo != "acme/web" || g.link("api").Provider != "github" || g.tagFormat("web") != "v{version}" || g.tagFormat("api") != "back@{version}" {
 		t.Fatalf("legado: %v %+v", err, g.links)
 	}
 	if !versionLess("1.9.0", "1.17.0") || !versionLess("1.2.0-rc", "1.2.0") || versionLess("1.2.0", "1.2.0-rc") {

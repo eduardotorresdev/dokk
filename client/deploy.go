@@ -155,7 +155,7 @@ type InstallOptions struct {
 	App       string
 	Image     string // imagem de destino (repo:tag ou repo@sha256:…)
 	Tag       string // tag git da release (ex. back@2.9.1), para {tag}; padrão a da imagem
-	SHA       string // commit da release, para {sha}; padrão o da release do GitHub da tag
+	SHA       string // commit da release, para {sha}; padrão o da release da tag no repo vinculado
 	Action    string // install | rollback (padrão install)
 	Config    *Config
 	SkipHooks bool
@@ -325,7 +325,7 @@ func (c *Client) applyConfig(ctx context.Context, o InstallOptions, res InstallR
 	}
 	sha := o.SHA
 	if sha == "" && tag != "" {
-		if rels, err := c.GithubReleases(ctx, o.App); err == nil {
+		if rels, err := c.RepoReleases(ctx, o.App); err == nil {
 			for _, r := range rels {
 				if r.Tag == tag || ImageTag(r.Tag) == tag {
 					sha = r.SHA

@@ -615,7 +615,7 @@ func cliHint(err error) string {
 	case client.AdvicePush:
 		return "faça git push do commit e rode de novo"
 	case client.AdviceLinkRepo:
-		return "vincule o repositório GitHub à app no painel"
+		return "vincule o repositório (GitHub ou GitLab) à app no painel e confira a conexão em Configurações"
 	case client.AdviceImage:
 		return "informe o repositório da imagem com --image"
 	case client.AdviceUnreachable:

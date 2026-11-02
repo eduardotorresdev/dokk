@@ -225,19 +225,30 @@ In CI, set `DOKK_URL` and `DOKK_TOKEN` (an API token, `dokk_...`) instead of log
 | `dokk logs <app> [-n N]` | `app_logs {app, lines?}` | Last lines of the app log |
 | `dokk start\|stop\|restart <app>` | `start_app` / `stop_app` / `restart_app` | Runs the action and waits for it (start/restart: until healthy) |
 | `dokk exec <app> [--run] [--process web] -- <cmd…>` | `exec {app, command, mode?, process?}` | Runs a command **inside the app's container** (never on the host); the CLI exits with the remote exit code |
-| `dokk releases <app>` | `list_releases` | GitHub releases, the installed one marked (also when the app runs an image by digest) |
+| `dokk releases <app>` | `list_releases` | Releases of the linked repository (GitHub or GitLab), the installed one marked (also when the app runs an image by digest) |
 | `dokk install <app> <tag> [--no-hooks]` | `install_release {app, tag, dir?, skip_hooks?}` | Installs a tag of the app's image, with the `dokk.yml` hooks, and waits until healthy |
 | `dokk rollback <app> [version] [--no-hooks]` | `rollback_release {app, version?, dir?, skip_hooks?}` | Installs the given version or, without one, the highest stable registry version below the current one |
-| `dokk release --app <app> …` | `create_release {app, bump\|version, dir, …}` | Next version → commit pushed? → `docker buildx build --platform linux/amd64 --push` → GitHub release → optional install |
+| `dokk release --app <app> …` | `create_release {app, bump\|version, dir, …}` | Next version → commit pushed? → `docker buildx build --platform linux/amd64 --push` → tag + release on GitHub or GitLab → optional install |
 | `dokk build-log <app> <id>` | `build_log` | Log of a build |
 | `dokk config get\|set\|unset builder [value]` / `config list` | `config {action, key, value?}` | This machine's config (the builder, see [Builder](#builder)) |
 | `dokk help` | `tools/list` | List of commands |
 
 Everything that lists or shows something takes `--json` for scripts. On an interactive terminal the CLI uses colors, spinners and boxes; when piped, in CI (`CI=true`), with `NO_COLOR` or `TERM=dumb` it prints plain text with timestamps. The MCP server never prints colors: tool results are plain text, with ANSI stripped from logs and command output, and errors say what to do next.
 
-`dokk release` flags: `--app`, `--bump patch|minor|major`, `--version`, `--dir`, `--notes`, `--install`, `--prerelease`, `--image` (override the image repository), `--platform`, `--builder`, `--no-hooks`, `--json`. It needs `git` and a builder (docker buildx or podman, see [Builder](#builder)) logged in to the app's registry, an app that deploys from an image and is linked to a GitHub repository. A non-zero exit code means failure.
+`dokk release` flags: `--app`, `--bump patch|minor|major`, `--version`, `--dir`, `--notes`, `--install`, `--prerelease`, `--image` (override the image repository), `--platform`, `--builder`, `--no-hooks`, `--json`. It needs `git` and a builder (docker buildx or podman, see [Builder](#builder)) logged in to the app's registry, an app that deploys from an image and is linked to a GitHub or GitLab repository (see [Git providers](#git-providers-github-and-gitlab)). A non-zero exit code means failure.
 
-**Versions.** The next version starts from the highest of the app's git tags (in its tag format, e.g. `back@{version}`) and the semver tags already in the image's registry, so a registry ahead of the GitHub releases is never overwritten. On the remote's default branch the version is a stable bump (`--bump`, default patch). On any other branch it is a **hash version**, `<next patch of the highest stable>-sha.<UTC commit time YYYYMMDDHHMMSS>.g<sha7>`, published as a prerelease; `--bump` is refused there. `--version` always wins.
+**Versions.** The next version starts from the highest of the app's git tags (in its tag format, e.g. `back@{version}`) and the semver tags already in the image's registry, so a registry ahead of the repository releases is never overwritten. On the remote's default branch the version is a stable bump (`--bump`, default patch). On any other branch it is a **hash version**, `<next patch of the highest stable>-sha.<UTC commit time YYYYMMDDHHMMSS>.g<sha7>`, published as a prerelease; `--bump` is refused there. `--version` always wins.
+
+### Git providers (GitHub and GitLab)
+
+`dokk release` creates the tag and the release on the server side, in the repository linked to the app (Settings tab of the app: provider, repository picked from a list, tag format such as `v{version}` or `back@{version}`). The panel's **Settings** page has one card per provider:
+
+- **GitHub**: "Connect to GitHub" creates a private GitHub App for this panel through the App Manifest flow (one click; the App needs `contents: write`), then you install it on the repositories you want.
+- **GitLab** (gitlab.com or self-managed): GitLab has no manifest flow, so there is one manual step. Set the GitLab URL, open the applications page the card links to (your user's, or a group's) and create an application with the values the card shows ready to copy: name `dokk-<host>`, Redirect URI `<panel origin>/gitlab/callback`, **Confidential** checked, scope `api`. Paste the Application ID and Secret, then "Connect to GitLab" runs OAuth (authorization code + PKCE). The access and refresh tokens are kept in `<data>/gitlab.json` (0600) and refreshed automatically (gitlab.com tokens last 2 h); "Disconnect" revokes them. The project list shows projects where the connected user is at least Developer.
+
+Links live in `<data>/github-apps.json` with a `provider` field (links without it are GitHub). The API is `/api/repos` (repositories of every connected provider) and `/api/apps/{name}/repo[/releases]`; the older `/api/apps/{name}/github[/releases]` routes remain as aliases, and the client falls back to them on older servers.
+
+Registry tags (versions, rollback, the digest → tag lookup) work with any registry that speaks the Docker Registry v2 token protocol (ghcr.io, registry.gitlab.com or a self-managed GitLab registry, Harbor…): dokk follows the `WWW-Authenticate` challenge of `/v2/`, using the registry login Dokku already has.
 
 ### `dokk.yml`
 

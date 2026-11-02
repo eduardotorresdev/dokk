@@ -148,6 +148,188 @@ function githubSection() {
     )
 }
 
+// Lê e limpa o ?gitlab= que o servidor deixa ao voltar do GitLab (mesma
+// lógica do ?github=).
+let gitlabNotice = ""
+function takeGitlabNotice() {
+    const q = new URLSearchParams(location.search)
+    const v = q.get("gitlab")
+    if (v) {
+        q.delete("gitlab")
+        history.replaceState(history.state, "", location.pathname + (q.size ? `?${q}` : ""))
+        gitlabNotice = ["connected", "state", "error"].includes(v) ? v : ""
+        setTimeout(() => gitlabNotice = "", 3000)
+    }
+    return gitlabNotice
+}
+
+// Linha "rótulo: valor [Copiar]" do passo a passo do GitLab.
+function copyRow(label, value) {
+    const ui = store({ copied: false })
+    return t.div({ className: "copy-row" },
+        t.span({ className: "muted", textContent: label }),
+        t.code({ className: "mono", textContent: value }),
+        t.button({
+            type: "button", className: "btn btn-sm", textContent: () => tr(ui.copied ? "settings.gitlab.copied" : "settings.gitlab.copy"),
+            onclick: async () => {
+                await navigator.clipboard?.writeText(typeof value === "function" ? value() : value).catch(() => {})
+                ui.copied = true
+                setTimeout(() => ui.copied = false, 1500)
+            },
+        }),
+    )
+}
+
+// GitLab: não há App Manifest. O usuário cria uma OAuth Application na
+// instância (passo a passo com os valores prontos) e cola ID + Secret; depois
+// "Conectar ao GitLab" faz o OAuth com PKCE.
+function gitlabSection() {
+    const ui = store({
+        loading: true, url: "https://gitlab.com", urlInput: "https://gitlab.com", group: "", clientId: "", secret: "",
+        hasApp: false, connected: false, username: "", appName: "", redirectUri: "", scopes: "api",
+        busy: false, connecting: false, error: "", notice: takeGitlabNotice(), repos: null, reposError: "",
+    })
+    const loadRepos = () => getJSON("/api/gitlab/repos").then((l) => ui.repos = l).catch((e) => ui.reposError = e.message)
+    const apply = (b) => {
+        Object.assign(ui, {
+            url: b.url, urlInput: b.url, clientId: b.clientId || "", hasApp: !!b.hasApp, connected: !!b.connected,
+            username: b.username || "", appName: b.appName || "", redirectUri: b.redirectUri || "", scopes: b.scopes || "api",
+        })
+        if (ui.connected && !ui.repos) loadRepos()
+        if (!ui.connected) ui.repos = null
+    }
+    getJSON("/api/gitlab").then(apply).catch((e) => ui.error = e.message).finally(() => ui.loading = false)
+    if (ui.notice === "connected" && !takeGitlabNotice.toasted) { takeGitlabNotice.toasted = true; toast(tr("settings.gitlab.notice.connected")); setTimeout(() => takeGitlabNotice.toasted = false, 3000) }
+
+    const base = () => (ui.urlInput.trim() || "https://gitlab.com").replace(/\/+$/, "").replace(/^(?!https?:\/\/)/, "https://")
+    const appsUrl = () => ui.group.trim()
+        ? `${base()}/groups/${ui.group.trim().split("/").map(encodeURIComponent).join("/")}/-/settings/applications`
+        : `${base()}/-/user_settings/applications`
+    const run = async (fn) => {
+        if (ui.busy) return
+        ui.busy = true
+        ui.error = ""
+        try { await fn() } catch (err) { ui.error = err.message } finally { ui.busy = false }
+    }
+    const save = (e) => {
+        e.preventDefault()
+        run(async () => {
+            apply(await api("PUT", "/api/gitlab", { url: ui.urlInput.trim(), clientId: ui.clientId.trim(), clientSecret: ui.secret.trim() }))
+            ui.secret = ""
+            toast(tr("settings.gitlab.saved"))
+        })
+    }
+    const connect = async () => {
+        if (ui.connecting) return
+        ui.connecting = true
+        ui.error = ""
+        try {
+            const out = await api("POST", "/api/gitlab/connect")
+            location.href = out.url
+        } catch (err) {
+            ui.error = err.message
+            ui.connecting = false
+        }
+    }
+    const disconnect = async () => {
+        if (!await confirmDialog({
+            title: tr("settings.gitlab.disconnect.confirm.title"),
+            text: tr("settings.gitlab.disconnect.confirm.text"),
+            confirm: tr("settings.gitlab.disconnect"),
+            danger: true,
+        })) return
+        run(async () => apply(await api("DELETE", "/api/gitlab/connection")))
+    }
+    const field = (label, input) => t.label({ className: "field" }, t.span({ textContent: label }), input)
+
+    // Passo a passo + formulário da Application (também serve para trocar).
+    const appForm = () => t.form({ rid: "app", className: "settings-form", onsubmit: save },
+        t.ol({ className: "gitlab-steps" },
+            t.li({},
+                field(() => tr("settings.gitlab.url.label"), t.input({
+                    className: "input mono", autocomplete: "off", spellcheck: false, placeholder: "https://gitlab.com",
+                    value: () => ui.urlInput, oninput: (e) => { ui.urlInput = e.target.value; ui.error = "" },
+                })),
+                field(() => tr("settings.gitlab.group.label"), t.input({
+                    className: "input mono", autocomplete: "off", spellcheck: false, placeholder: () => tr("settings.gitlab.group.placeholder"),
+                    value: () => ui.group, oninput: (e) => { ui.group = e.target.value },
+                })),
+            ),
+            t.li({},
+                t.p({},
+                    t.span({ textContent: () => tr("settings.gitlab.step.open") + " " }),
+                    t.a({ href: appsUrl, target: "_blank", rel: "noopener", className: "mono", textContent: appsUrl })),
+                t.div({ className: "copy-rows" },
+                    copyRow(() => tr("settings.gitlab.step.name"), () => ui.appName),
+                    copyRow(() => tr("settings.gitlab.step.redirect"), () => ui.redirectUri),
+                    copyRow(() => tr("settings.gitlab.step.scopes"), () => ui.scopes),
+                ),
+                t.p({ className: "muted", textContent: () => tr("settings.gitlab.step.confidential") }),
+            ),
+            t.li({},
+                t.p({ textContent: () => tr("settings.gitlab.step.paste") }),
+                field(() => tr("settings.gitlab.clientId.label"), t.input({
+                    className: "input mono", required: true, autocomplete: "off", spellcheck: false,
+                    value: () => ui.clientId, oninput: (e) => { ui.clientId = e.target.value; ui.error = "" },
+                })),
+                field(() => tr("settings.gitlab.secret.label"), t.input({
+                    className: "input mono", type: "password", autocomplete: "off", spellcheck: false,
+                    required: () => !ui.hasApp,
+                    value: () => ui.secret, oninput: (e) => { ui.secret = e.target.value; ui.error = "" },
+                })),
+                t.p({ className: "muted", hidden: () => !ui.hasApp, textContent: () => tr("settings.gitlab.secret.keep") }),
+            ),
+        ),
+        t.div({ className: "settings-actions" },
+            t.button({ type: "submit", className: () => ui.hasApp ? "btn" : "btn btn-primary", disabled: () => ui.busy || ui.loading || !ui.clientId.trim() },
+                () => ui.busy ? [t.span({ className: "spinner" }), t.span({ textContent: () => tr("settings.gitlab.busy") })] : [t.span({ textContent: () => tr("settings.gitlab.save") })]),
+        ),
+    )
+    const connectButton = () => t.div({ rid: "connect", className: "settings-actions" },
+        t.button({ type: "button", className: "btn btn-primary", disabled: () => ui.connecting || ui.loading, onclick: connect },
+            () => ui.connecting ? [t.span({ className: "spinner" }), t.span({ textContent: () => tr("settings.gitlab.connecting") })] : [t.span({ textContent: () => tr("settings.gitlab.connect") })]))
+    const connected = () => t.div({ rid: "connected", className: "settings-form" },
+        t.p({ className: "muted" },
+            t.span({ textContent: () => tr("settings.gitlab.connectedAs") + " " }),
+            t.a({ className: "mono", href: `${ui.url}/${ui.username}`, target: "_blank", rel: "noopener", textContent: ui.username ? `@${ui.username}` : ui.url }),
+            t.span({ textContent: ` · ${ui.url.replace(/^https?:\/\//, "")}` })),
+        t.div({}, () => {
+            if (ui.reposError) return t.p({ rid: "re", className: "form-error", textContent: ui.reposError })
+            if (!ui.repos) return t.p({ rid: "rl", className: "muted", textContent: () => tr("settings.github.repos.loading") })
+            if (!ui.repos.length) return t.p({ rid: "r0", className: "muted", textContent: () => tr("settings.gitlab.repos.empty") })
+            return t.div({ rid: "rs" },
+                t.p({ className: "muted", textContent: () => tr("settings.gitlab.repos.title", { n: ui.repos.length }) }),
+                t.ul({ className: "gh-repo-list" }, ...ui.repos.map((r) => t.li({ className: "mono" },
+                    t.span({ textContent: r.fullName }),
+                    r.private ? t.span({ className: "chip", textContent: () => tr("settings.github.repos.private") }) : null))))
+        }),
+        t.div({ className: "settings-actions" },
+            t.button({ type: "button", className: "btn", disabled: () => ui.busy, onclick: disconnect, textContent: () => tr("settings.gitlab.disconnect") })),
+    )
+
+    return t.section({ className: "settings-card" },
+        t.div({ className: "settings-card-head" },
+            t.h3({ textContent: () => tr("settings.gitlab.title") }),
+            t.span({ className: "registry-status", hidden: () => ui.loading },
+                t.span({ className: () => `dot ${ui.connected ? "dot-running" : "dot-exited"}` }),
+                t.span({ textContent: () => tr(ui.connected ? "settings.gitlab.status.connected" : ui.hasApp ? "settings.gitlab.status.ready" : "settings.gitlab.status.missing") })),
+        ),
+        t.p({ className: "muted", textContent: () => tr("settings.gitlab.text") }),
+        t.p({ className: "form-error", role: "alert", hidden: () => ui.notice !== "state" && ui.notice !== "error", textContent: () => ui.notice === "state" ? tr("settings.gitlab.notice.state") : ui.notice === "error" ? tr("settings.gitlab.notice.error") : "" }),
+        t.div({}, () => {
+            if (ui.loading) return null
+            if (ui.connected) return connected()
+            if (ui.hasApp) return connectButton()
+            return appForm()
+        }),
+        t.p({ className: "form-error", role: "alert", hidden: () => !ui.error, textContent: () => ui.error }),
+        t.details({ className: "settings-advanced", hidden: () => ui.loading || !ui.hasApp },
+            t.summary({ textContent: () => tr("settings.gitlab.advanced") }),
+            t.div({}, () => ui.hasApp ? appForm() : null),
+        ),
+    )
+}
+
 // Mostra o token recém-criado uma única vez, com botão de copiar.
 function newTokenDialog(token) {
     const ui = store({ copied: false })
@@ -236,13 +418,15 @@ function tokensSection() {
     )
 }
 
-// Página Configurações: GitHub App + tokens de API.
+// Página Configurações: GitHub e GitLab lado a lado + tokens de API.
 export function settings() {
     return t.main({ className: "page" },
         t.header({ className: "page-head" },
             t.div({ className: "title" }, t.h1({ textContent: () => tr("settings.title") })),
         ),
-        t.div({ className: "settings" }, githubSection(), tokensSection()),
+        t.div({ className: "settings" },
+            t.div({ className: "settings-providers" }, githubSection(), gitlabSection()),
+            tokensSection()),
     )
 }
 
@@ -258,61 +442,80 @@ function nextVersion(versions) {
     return `${cur[0]}.${cur[1]}.${cur[2] + 1}`
 }
 
-// Cartão da aba Configurações da app: vincula a app a um repo do GitHub.
-export function appGithubCard(name) {
-    const base = `/api/apps/${encodeURIComponent(name)}/github`
-    const ui = store({ loading: true, repo: null, installed: false, configured: false, installUrl: "", input: "", busy: false, error: "", repos: [], format: "v{version}", formatInput: "v{version}", versions: [] })
-    const listId = `gh-repos-${name}`
-    Promise.all([getJSON(base), getJSON("/api/github")])
-        .then(([link, gh]) => {
-            Object.assign(ui, { repo: link.repo, installed: link.installed, input: link.repo || "", configured: gh.configured, installUrl: gh.installUrl || "" })
-            applyFormat(link)
-            loadVersions()
-            if (gh.configured) getJSON("/api/github/repos").then((l) => ui.repos = l).catch(() => {})
+const PROVIDERS = [{ key: "github", label: "GitHub" }, { key: "gitlab", label: "GitLab" }]
+
+// Cartão da aba Configurações da app: vincula a app a um repo do GitHub ou
+// do GitLab (rotas neutras /repo).
+export function appRepoCard(name) {
+    const base = `/api/apps/${encodeURIComponent(name)}/repo`
+    const ui = store({
+        loading: true, provider: "github", linkedProvider: null, repo: null, installed: false, input: "", busy: false, error: "",
+        repos: [], format: "v{version}", formatInput: "v{version}", versions: [],
+        github: { configured: false, installUrl: "" }, gitlab: { connected: false },
+    })
+    const listId = `repos-${name}`
+    const ready = (p) => p === "gitlab" ? ui.gitlab.connected : ui.github.configured
+    Promise.all([getJSON(base), getJSON("/api/github").catch(() => ({})), getJSON("/api/gitlab").catch(() => ({}))])
+        .then(([link, gh, gl]) => {
+            ui.github = { configured: !!gh.configured, installUrl: gh.installUrl || "" }
+            ui.gitlab = { connected: !!gl.connected }
+            applyLink(link)
+            // Sem vínculo: começa no provedor conectado (GitHub se os dois).
+            if (!link.repo && !ui.github.configured && ui.gitlab.connected) ui.provider = "gitlab"
+            if (ui.github.configured || ui.gitlab.connected) getJSON("/api/repos").then((l) => ui.repos = l).catch(() => {})
         })
         .catch((e) => ui.error = e.message)
         .finally(() => ui.loading = false)
 
-    const applyFormat = (link) => { ui.format = ui.formatInput = link.tagFormat || "v{version}" }
+    const applyLink = (link) => {
+        Object.assign(ui, { repo: link.repo, installed: link.installed, input: link.repo || "", linkedProvider: link.provider || null })
+        if (link.provider) ui.provider = link.provider
+        ui.format = ui.formatInput = link.tagFormat || "v{version}"
+        loadVersions()
+    }
     const loadVersions = () => {
         ui.versions = []
-        if (ui.repo && ui.installed && ui.configured) getJSON(`${base}/releases`).then((l) => ui.versions = l.map((r) => r.version)).catch(() => {})
+        if (ui.repo && ui.installed) getJSON(`${base}/releases`).then((l) => ui.versions = l.map((r) => r.version)).catch(() => {})
     }
     const run = async (fn) => {
         if (ui.busy) return
         ui.busy = true
         ui.error = ""
         try {
-            const link = await fn()
-            Object.assign(ui, { repo: link.repo, installed: link.installed, input: link.repo || "" })
-            applyFormat(link)
-            loadVersions()
+            applyLink(await fn())
         } catch (err) {
             ui.error = err.message
         } finally { ui.busy = false }
     }
-    const save = (e) => { e.preventDefault(); run(() => api("PUT", base, { repo: ui.input.trim(), tagFormat: ui.formatInput.trim() })) }
+    const save = (e) => { e.preventDefault(); run(() => api("PUT", base, { provider: ui.provider, repo: ui.input.trim(), tagFormat: ui.formatInput.trim() })) }
     const formatOK = () => (ui.formatInput.trim().match(/\{version\}/g) || []).length === 1
-    const dirty = () => ui.input.trim() !== (ui.repo || "") || (!!ui.input.trim() && ui.formatInput.trim() !== ui.format)
+    const dirty = () => ui.input.trim() !== (ui.repo || "") || ui.provider !== (ui.linkedProvider || ui.provider) || (!!ui.input.trim() && ui.formatInput.trim() !== ui.format)
     const unlink = () => run(() => api("DELETE", base))
+    const reposOf = () => ui.repos.filter((r) => (r.provider || "github") === ui.provider)
+    const label = (p) => PROVIDERS.find((x) => x.key === p)?.label || p
 
     return t.section({ className: "settings-card" },
-        t.h3({ textContent: () => tr("settings.appGithub.title") }),
-        t.p({ className: "muted", textContent: () => tr("settings.appGithub.text") }),
+        t.h3({ textContent: () => tr("settings.appRepo.title") }),
+        t.p({ className: "muted", textContent: () => tr("settings.appRepo.text") }),
         t.form({ className: "rename-form", onsubmit: save },
+            t.select({
+                className: "input repo-provider", "html-aria-label": () => tr("settings.appRepo.provider.label"), disabled: () => ui.loading || ui.busy,
+                onchange: (e) => { ui.provider = e.target.value; ui.error = ""; if (ui.provider !== ui.linkedProvider) ui.input = "" },
+            }, ...PROVIDERS.map((p) => t.option({ value: p.key, textContent: p.label, selected: () => ui.provider === p.key }))),
             t.input({
-                className: "input mono", autocomplete: "off", spellcheck: false, "html-aria-label": () => tr("settings.appGithub.repo.label"),
+                className: "input mono", autocomplete: "off", spellcheck: false, "html-aria-label": () => tr("settings.appRepo.repo.label"),
                 "html-list": listId, type: "search",
-                placeholder: () => tr(ui.repos.length ? "settings.appGithub.repo.pick" : "settings.appGithub.repo.placeholder"), disabled: () => ui.loading || ui.busy,
+                placeholder: () => reposOf().length ? tr("settings.appRepo.repo.pick") : ui.provider === "gitlab" ? "group/project" : "owner/repo",
+                disabled: () => ui.loading || ui.busy,
                 value: () => ui.input, oninput: (e) => { ui.input = e.target.value; ui.error = "" },
             }),
             t.button({ type: "submit", className: "btn", disabled: () => ui.busy || !ui.input.trim() || !formatOK() || !dirty() },
-                () => ui.busy ? [t.span({ className: "spinner" }), t.span({ textContent: () => tr("settings.appGithub.busy") })] : [t.span({ textContent: () => tr("settings.appGithub.save") })]),
-            t.datalist({ id: listId }, () => ui.repos.map((r) => t.option({ rid: r.fullName, value: r.fullName }))),
-            () => ui.repo ? t.button({ rid: "unlink", type: "button", className: "btn", disabled: () => ui.busy, onclick: unlink, textContent: () => tr("settings.appGithub.unlink") }) : null,
+                () => ui.busy ? [t.span({ className: "spinner" }), t.span({ textContent: () => tr("settings.appRepo.busy") })] : [t.span({ textContent: () => tr("settings.appRepo.save") })]),
+            t.datalist({ id: listId }, () => reposOf().map((r) => t.option({ rid: `${r.provider}:${r.fullName}`, value: r.fullName }))),
+            () => ui.repo ? t.button({ rid: "unlink", type: "button", className: "btn", disabled: () => ui.busy, onclick: unlink, textContent: () => tr("settings.appRepo.unlink") }) : null,
         ),
         t.label({ className: "field tag-format" },
-            t.span({ textContent: () => tr("settings.appGithub.format.label") }),
+            t.span({ textContent: () => tr("settings.appRepo.format.label") }),
             t.input({
                 className: "input mono", autocomplete: "off", spellcheck: false, maxLength: 100,
                 placeholder: "v{version}", disabled: () => ui.loading || ui.busy,
@@ -321,24 +524,30 @@ export function appGithubCard(name) {
             t.span({
                 className: () => formatOK() ? "muted" : "form-error",
                 textContent: () => formatOK()
-                    ? tr("settings.appGithub.format.next", { tag: ui.formatInput.trim().replace("{version}", nextVersion(ui.versions)) })
-                    : tr("settings.appGithub.format.invalid"),
+                    ? tr("settings.appRepo.format.next", { tag: ui.formatInput.trim().replace("{version}", nextVersion(ui.versions)) })
+                    : tr("settings.appRepo.format.invalid"),
             }),
         ),
         t.p({ className: "form-error", role: "alert", hidden: () => !ui.error, textContent: () => ui.error }),
         t.div({ className: "settings-status", hidden: () => ui.loading || !ui.repo }, () => {
-            if (!ui.configured) {
-                return t.p({ rid: "nc", className: "muted" },
-                    t.span({ textContent: () => tr("settings.appGithub.notConfigured") + " " }),
-                    t.a({ href: "/settings", textContent: () => tr("settings.appGithub.configure") }))
+            const p = ui.linkedProvider || "github"
+            if (!ready(p)) {
+                return t.p({ rid: `nc-${p}`, className: "muted" },
+                    t.span({ textContent: () => tr(p === "gitlab" ? "settings.appRepo.gitlab.notConnected" : "settings.appRepo.github.notConfigured") + " " }),
+                    t.a({ href: "/settings", textContent: () => tr("settings.appRepo.configure") }))
             }
             if (ui.installed) {
-                return t.span({ rid: "ok", className: "registry-status" }, t.span({ className: "dot dot-running" }), t.span({ textContent: () => tr("settings.appGithub.installed") }))
+                return t.span({ rid: `ok-${p}`, className: "registry-status" }, t.span({ className: "dot dot-running" }),
+                    t.span({ textContent: () => tr("settings.appRepo.ok", { provider: label(p) }) }))
+            }
+            if (p === "gitlab") {
+                return t.p({ rid: "na-gitlab", className: "muted" },
+                    t.span({ className: "registry-status" }, t.span({ className: "dot dot-exited" }), t.span({ textContent: () => tr("settings.appRepo.gitlab.noAccess") })))
             }
             return t.p({ rid: "ni", className: "muted" },
-                t.span({ className: "registry-status" }, t.span({ className: "dot dot-exited" }), t.span({ textContent: () => tr("settings.appGithub.notInstalled") })),
+                t.span({ className: "registry-status" }, t.span({ className: "dot dot-exited" }), t.span({ textContent: () => tr("settings.appRepo.github.notInstalled") })),
                 " ",
-                t.a({ href: () => ui.installUrl, target: "_blank", rel: "noopener", textContent: () => tr("settings.appGithub.install") }))
+                t.a({ href: () => ui.github.installUrl, target: "_blank", rel: "noopener", textContent: () => tr("settings.appRepo.github.install") }))
         }),
     )
 }

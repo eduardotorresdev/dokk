@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -168,8 +169,9 @@ type AppStatus struct {
 	Action *Action `json:"action"`
 }
 
-// GithubRelease é uma release do GitHub vinculada à app.
-type GithubRelease struct {
+// RepoRelease é uma release (tag do formato da app, com a Release do
+// provedor quando há) no repositório vinculado: GitHub ou GitLab.
+type RepoRelease struct {
 	Tag        string `json:"tag"`
 	Version    string `json:"version"` // semver sem prefixo (ex. 1.17.0)
 	Name       string `json:"name"`
@@ -179,7 +181,10 @@ type GithubRelease struct {
 	Prerelease bool   `json:"prerelease"`
 }
 
-// NewRelease é o corpo de POST /api/apps/{name}/github/releases.
+// GithubRelease é o nome antigo de RepoRelease.
+type GithubRelease = RepoRelease
+
+// NewRelease é o corpo de POST /api/apps/{name}/repo/releases.
 type NewRelease struct {
 	Tag        string `json:"tag"`
 	SHA        string `json:"sha"`
@@ -190,8 +195,9 @@ type NewRelease struct {
 
 // CreatedRelease é a resposta da criação.
 type CreatedRelease struct {
-	Tag string `json:"tag"`
-	URL string `json:"url"`
+	Provider string `json:"provider,omitempty"` // vazio em servidor antigo (= github)
+	Tag      string `json:"tag"`
+	URL      string `json:"url"`
 }
 
 // AppsRaw devolve GET /api/apps como veio.
@@ -211,38 +217,93 @@ func (c *Client) AppStatus(ctx context.Context, name string) (AppStatus, error) 
 	return s, err
 }
 
-// GithubReleases lista as releases do GitHub da app, mais recente primeiro.
-func (c *Client) GithubReleases(ctx context.Context, name string) ([]GithubRelease, error) {
-	var l []GithubRelease
-	err := c.getJSON(ctx, appPath(name, "github", "releases"), &l)
+// routeMissing: o servidor não conhece a rota (dokk antigo, sem /repo).
+// O 404 do mux vem em texto puro, diferente do {"error"} de app inexistente;
+// um POST numa rota desconhecida cai no "GET /" da UI e vira 405.
+func routeMissing(err error) bool {
+	var ae *APIError
+	return errors.As(err, &ae) && (ae.Status == http.StatusMethodNotAllowed || ae.Status == http.StatusNotFound && ae.Message == "404 page not found")
+}
+
+// repoDo chama a rota neutra /repo…; num servidor antigo, a /github….
+func (c *Client) repoDo(ctx context.Context, method, name string, body any, rest ...string) ([]byte, error) {
+	data, err := c.Do(ctx, method, appPath(name, append([]string{"repo"}, rest...)...), body)
+	if routeMissing(err) {
+		data, err = c.Do(ctx, method, appPath(name, append([]string{"github"}, rest...)...), body)
+	}
+	return data, err
+}
+
+// RepoReleases lista as releases do repo vinculado, maior versão primeiro.
+func (c *Client) RepoReleases(ctx context.Context, name string) ([]RepoRelease, error) {
+	data, err := c.repoDo(ctx, http.MethodGet, name, nil, "releases")
+	if err != nil {
+		return nil, err
+	}
+	var l []RepoRelease
+	err = json.Unmarshal(data, &l)
 	return l, err
 }
 
-// GithubLink é o vínculo app ↔ repo do GitHub.
-type GithubLink struct {
+// GithubReleases é o nome antigo de RepoReleases.
+func (c *Client) GithubReleases(ctx context.Context, name string) ([]RepoRelease, error) {
+	return c.RepoReleases(ctx, name)
+}
+
+// RepoLink é o vínculo app ↔ repositório.
+type RepoLink struct {
+	Provider  string `json:"provider"` // github ou gitlab (vazio em servidor antigo = github)
 	Repo      string `json:"repo"`
 	Installed bool   `json:"installed"`
 	TagFormat string `json:"tagFormat"` // ex. v{version}, back@{version}
 }
 
-// GithubLink lê GET /api/apps/{name}/github.
-func (c *Client) GithubLink(ctx context.Context, name string) (GithubLink, error) {
-	var l GithubLink
-	err := c.getJSON(ctx, appPath(name, "github"), &l)
+// GithubLink é o nome antigo de RepoLink.
+type GithubLink = RepoLink
+
+// ProviderName é o nome do provedor para mensagens ("GitHub", "GitLab").
+func (l RepoLink) ProviderName() string { return ProviderName(l.Provider) }
+
+// ProviderName traduz o id do provedor para exibição.
+func ProviderName(p string) string {
+	if p == "gitlab" {
+		return "GitLab"
+	}
+	return "GitHub"
+}
+
+// RepoLink lê GET /api/apps/{name}/repo.
+func (c *Client) RepoLink(ctx context.Context, name string) (RepoLink, error) {
+	var l RepoLink
+	data, err := c.repoDo(ctx, http.MethodGet, name, nil)
+	if err == nil {
+		err = json.Unmarshal(data, &l)
+	}
 	if l.TagFormat == "" {
 		l.TagFormat = "v{version}"
+	}
+	if l.Provider == "" && l.Repo != "" {
+		l.Provider = "github"
 	}
 	return l, err
 }
 
-// CreateRelease cria a release (tag no sha) no GitHub.
+// GithubLink é o nome antigo de RepoLink.
+func (c *Client) GithubLink(ctx context.Context, name string) (RepoLink, error) {
+	return c.RepoLink(ctx, name)
+}
+
+// CreateRelease cria a tag no sha e a Release no provedor do repo.
 func (c *Client) CreateRelease(ctx context.Context, name string, r NewRelease) (CreatedRelease, error) {
-	data, err := c.Do(ctx, http.MethodPost, appPath(name, "github", "releases"), r)
+	data, err := c.repoDo(ctx, http.MethodPost, name, r, "releases")
 	if err != nil {
 		return CreatedRelease{}, err
 	}
 	var out CreatedRelease
 	err = json.Unmarshal(data, &out)
+	if out.Provider == "" {
+		out.Provider = "github"
+	}
 	return out, err
 }
 

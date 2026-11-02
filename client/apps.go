@@ -30,7 +30,7 @@ const (
 	AdviceBusy               // 409 genérico (ação em andamento)
 	AdviceTagExists          // tag já existe
 	AdvicePush               // commit não está no remoto / 422
-	AdviceLinkRepo           // 400 na release: repo/GitHub App não vinculado
+	AdviceLinkRepo           // 400 na release: repo não vinculado ou provedor (GitHub/GitLab) sem acesso
 	AdviceImage              // app não é deploy por imagem
 	AdviceUnreachable        // rede
 )
@@ -58,14 +58,14 @@ func Advise(err error) Advice {
 		case http.StatusNotFound:
 			return AdviceAppNotFound
 		case http.StatusConflict:
-			if ae.Path != "" && strings.HasSuffix(ae.Path, "/github/releases") {
+			if isReleasesPath(ae.Path) {
 				return AdviceTagExists
 			}
 			return AdviceBusy
 		case http.StatusUnprocessableEntity:
 			return AdvicePush
 		case http.StatusBadRequest:
-			if strings.HasSuffix(ae.Path, "/github/releases") {
+			if isReleasesPath(ae.Path) {
 				return AdviceLinkRepo
 			}
 		}
@@ -73,6 +73,11 @@ func Advise(err error) Advice {
 		return AdviceUnreachable
 	}
 	return AdviceNone
+}
+
+// isReleasesPath: POST/GET de releases do repo (rota neutra ou a antiga).
+func isReleasesPath(p string) bool {
+	return strings.HasSuffix(p, "/repo/releases") || strings.HasSuffix(p, "/github/releases")
 }
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-Z\\-_]`)
@@ -105,12 +110,12 @@ type Status struct {
 	App     App     `json:"app"`
 	Action  *Action `json:"action,omitempty"`
 	Version string  `json:"version,omitempty"` // tag da imagem atual (por digest: a tag resolvida ou o digest curto)
-	Commit  string  `json:"commit,omitempty"`  // sha da release do GitHub dessa tag
+	Commit  string  `json:"commit,omitempty"`  // sha da release dessa tag no repo vinculado
 	Release string  `json:"release,omitempty"` // URL da release
 }
 
-// Status junta o detalhe da app e, quando há, a release do GitHub da tag
-// instalada (sem vínculo com GitHub, Commit fica vazio).
+// Status junta o detalhe da app e, quando há, a release da tag instalada
+// no repo vinculado (sem vínculo, Commit fica vazio).
 func (c *Client) Status(ctx context.Context, name string) (Status, error) {
 	st, err := c.AppStatus(ctx, name)
 	if err != nil {
@@ -118,7 +123,7 @@ func (c *Client) Status(ctx context.Context, name string) (Status, error) {
 	}
 	out := Status{App: st.App, Action: st.Action, Version: c.CurrentVersion(ctx, st.App)}
 	if out.Version != "" {
-		if rels, err := c.GithubReleases(ctx, name); err == nil {
+		if rels, err := c.RepoReleases(ctx, name); err == nil {
 			for _, r := range rels {
 				if r.Tag == out.Version || ImageTag(r.Tag) == out.Version {
 					out.Commit, out.Release = r.SHA, r.URL
@@ -130,21 +135,25 @@ func (c *Client) Status(ctx context.Context, name string) (Status, error) {
 	return out, nil
 }
 
-// ReleaseList são as releases do GitHub e a tag instalada.
+// ReleaseList são as releases do repo vinculado e a tag instalada.
 type ReleaseList struct {
-	Current  string          `json:"current,omitempty"`
-	Releases []GithubRelease `json:"releases"`
+	Provider string        `json:"provider,omitempty"` // github ou gitlab
+	Current  string        `json:"current,omitempty"`
+	Releases []RepoRelease `json:"releases"`
 }
 
-// Releases lista as releases do GitHub da app, marcando a instalada.
+// Releases lista as releases do repo da app, marcando a instalada.
 func (c *Client) Releases(ctx context.Context, name string) (ReleaseList, error) {
-	rels, err := c.GithubReleases(ctx, name)
+	rels, err := c.RepoReleases(ctx, name)
 	if err != nil {
 		return ReleaseList{}, err
 	}
 	out := ReleaseList{Releases: rels}
+	if l, err := c.RepoLink(ctx, name); err == nil {
+		out.Provider = l.Provider
+	}
 	if out.Releases == nil {
-		out.Releases = []GithubRelease{}
+		out.Releases = []RepoRelease{}
 	}
 	if st, err := c.AppStatus(ctx, name); err == nil {
 		out.Current = c.CurrentVersion(ctx, st.App)

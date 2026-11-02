@@ -87,7 +87,9 @@ type fakeAPI struct {
 	polls    int
 	auth     string
 	format   string // tagFormat do vínculo ("" = padrão)
-	releases string // corpo de GET .../github/releases
+	releases string // corpo de GET .../releases
+	provider string // "gitlab": servidor novo (rotas /repo); vazio: servidor antigo (só /github)
+	paths    []string
 }
 
 func (f *fakeAPI) server(t *testing.T) *httptest.Server {
@@ -109,23 +111,33 @@ func (f *fakeAPI) server(t *testing.T) *httptest.Server {
 		}
 		json.NewEncoder(w).Encode(map[string]any{"app": app, "action": action})
 	})
-	mux.HandleFunc("GET /api/apps/web/github", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"repo": "acme/web", "installed": true, "tagFormat": f.format})
+	base := "/api/apps/web/github"
+	if f.provider != "" {
+		base = "/api/apps/web/repo"
+	}
+	mux.HandleFunc("GET "+base, func(w http.ResponseWriter, r *http.Request) {
+		f.paths = append(f.paths, r.URL.Path)
+		link := map[string]any{"repo": "acme/web", "installed": true, "tagFormat": f.format}
+		if f.provider != "" {
+			link["provider"] = f.provider
+		}
+		json.NewEncoder(w).Encode(link)
 	})
-	mux.HandleFunc("GET /api/apps/web/github/releases", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET "+base+"/releases", func(w http.ResponseWriter, r *http.Request) {
+		f.paths = append(f.paths, r.URL.Path)
 		if f.releases != "" {
 			io.WriteString(w, f.releases)
 			return
 		}
 		io.WriteString(w, `[{"tag":"v1.0.0","version":"1.0.0","sha":"x"}]`)
 	})
-	mux.HandleFunc("POST /api/apps/web/github/releases", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST "+base+"/releases", func(w http.ResponseWriter, r *http.Request) {
 		var nr NewRelease
 		json.NewDecoder(r.Body).Decode(&nr)
 		f.mu.Lock()
 		f.created = &nr
 		f.mu.Unlock()
-		json.NewEncoder(w).Encode(CreatedRelease{Tag: nr.Tag, URL: "https://github.com/acme/web/releases/tag/" + nr.Tag})
+		json.NewEncoder(w).Encode(CreatedRelease{Provider: f.provider, Tag: nr.Tag, URL: "https://git.test/acme/web/-/releases/" + nr.Tag})
 	})
 	mux.HandleFunc("POST /api/apps/web/install", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ Image string }
@@ -177,6 +189,47 @@ func TestReleaseFullFlow(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "#1 building") {
 		t.Errorf("build output não foi para o log: %q", log.String())
+	}
+}
+
+// Servidor novo com repo no GitLab: rotas /repo, nada de "GitHub" no log.
+func TestReleaseGitLab(t *testing.T) {
+	api := &fakeAPI{provider: "gitlab"}
+	srv := api.server(t)
+	var log strings.Builder
+	c := &Client{URL: srv.URL, Token: "t"}
+	res, err := c.Release(context.Background(), ReleaseOptions{App: "web", Dir: "/src", Runner: &fakeRunner{remote: "origin/main"}, Log: &log})
+	if err != nil {
+		t.Fatal(err, log.String())
+	}
+	if res.Provider != "gitlab" || res.Tag != "v1.0.1" || !strings.Contains(log.String(), "release no GitLab") || strings.Contains(log.String(), "GitHub") {
+		t.Fatalf("res = %+v\n%s", res, log.String())
+	}
+	for _, p := range api.paths {
+		if !strings.Contains(p, "/repo") {
+			t.Errorf("rota antiga usada: %s", p)
+		}
+	}
+}
+
+// Servidor antigo (sem /repo): o cliente cai para /github. O dokk antigo
+// responde POST em rota desconhecida com 405 (cai no "GET /" da UI).
+func TestRouteMissing(t *testing.T) {
+	for err, want := range map[error]bool{
+		&APIError{Status: 404, Message: "404 page not found"}: true,
+		&APIError{Status: 405, Message: "Method Not Allowed"}: true,
+		&APIError{Status: 404, Message: "app not found"}:      false,
+		&APIError{Status: 400}:                                false,
+	} {
+		if routeMissing(err) != want {
+			t.Errorf("%v = %v", err, !want)
+		}
+	}
+	api := &fakeAPI{}
+	srv := api.server(t)
+	l, err := (&Client{URL: srv.URL}).RepoLink(context.Background(), "web")
+	if err != nil || l.Provider != "github" || l.Repo != "acme/web" {
+		t.Fatalf("fallback = %+v %v", l, err)
 	}
 }
 

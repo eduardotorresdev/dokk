@@ -70,6 +70,7 @@ type ReleaseResult struct {
 	Prerelease bool   `json:"prerelease,omitempty"`
 	Image      string `json:"image"`
 	URL        string `json:"url"`
+	Provider   string `json:"provider,omitempty"` // github ou gitlab
 	Installed  bool   `json:"installed"`
 }
 
@@ -181,7 +182,8 @@ func (p PlainReporter) Done(detail string, err error) {
 func (p PlainReporter) Output() io.Writer { return p.W }
 
 // Release roda o fluxo completo: versão → sha no remoto → build+push →
-// release no GitHub via dokk → install opcional até healthy.
+// tag + Release no provedor do repo (GitHub/GitLab) via dokk → install
+// opcional até healthy.
 func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, error) {
 	var res ReleaseResult
 	if o.App == "" {
@@ -242,11 +244,12 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 		res.Branch = branch
 		onDefault := branch == def
 
-		link, err := c.GithubLink(ctx, o.App)
+		link, err := c.RepoLink(ctx, o.App)
 		if err != nil {
 			return "", err
 		}
-		rels, err := c.GithubReleases(ctx, o.App)
+		res.Provider = link.Provider
+		rels, err := c.RepoReleases(ctx, o.App)
 		if err != nil {
 			return "", err
 		}
@@ -313,7 +316,7 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 		return res, err
 	}
 
-	// Commit precisa existir no remoto (a tag é criada pelo GitHub no sha).
+	// Commit precisa existir no remoto (a tag é criada pelo provedor no sha).
 	err = step("Conferindo commit no remoto", func() (string, error) {
 		var out bytes.Buffer
 		if err := o.Runner.Run(ctx, o.Dir, &out, "git", "branch", "-r", "--contains", res.SHA); err != nil || strings.TrimSpace(out.String()) == "" {
@@ -346,14 +349,14 @@ func (c *Client) Release(ctx context.Context, o ReleaseOptions) (ReleaseResult, 
 		return res, err
 	}
 
-	err = step("Criando release no GitHub", func() (string, error) {
+	err = step("Criando release no "+ProviderName(res.Provider), func() (string, error) {
 		created, err := c.CreateRelease(ctx, o.App, NewRelease{
 			Tag: res.Tag, SHA: res.SHA, Image: res.Image, Notes: o.Notes, Prerelease: o.Prerelease,
 		})
 		if err != nil {
 			return "", fmt.Errorf("criando a release: %w", err)
 		}
-		res.URL = created.URL
+		res.URL, res.Provider = created.URL, created.Provider
 		return created.URL, nil
 	})
 	if err != nil || !o.Install {

@@ -148,8 +148,8 @@ func str(desc string) map[string]any { return map[string]any{"type": "string", "
 var mcpTools = []map[string]any{
 	{"name": "list_apps", "description": "Lista as apps do Dokku com status dos checks.", "inputSchema": schema(map[string]any{})},
 	{"name": "app_status", "description": "Detalhe de uma app: imagem atual, checks, processos e a ação em andamento.", "inputSchema": schema(map[string]any{"app": str("nome da app")}, "app")},
-	{"name": "list_releases", "description": "Releases do GitHub vinculadas à app (mais recente primeiro).", "inputSchema": schema(map[string]any{"app": str("nome da app")}, "app")},
-	{"name": "create_release", "description": "Calcula a versão (máximo entre as tags git e as do registry; fora da branch padrão, versão por hash e prerelease), confere que o commit está no remoto, faz build+push da imagem (linux/amd64, build do dokk.yml), cria a release no GitHub e opcionalmente instala até ficar healthy, com os hooks do dokk.yml.", "inputSchema": schema(map[string]any{
+	{"name": "list_releases", "description": "Releases do repositório vinculado à app, no GitHub ou no GitLab (maior versão primeiro).", "inputSchema": schema(map[string]any{"app": str("nome da app")}, "app")},
+	{"name": "create_release", "description": "Calcula a versão (máximo entre as tags git e as do registry; fora da branch padrão, versão por hash e prerelease), confere que o commit está no remoto, faz build+push da imagem (linux/amd64, build do dokk.yml), cria a tag e a release no repositório vinculado (GitHub ou GitLab) e opcionalmente instala até ficar healthy, com os hooks do dokk.yml.", "inputSchema": schema(map[string]any{
 		"app":        str("nome da app"),
 		"bump":       map[string]any{"type": "string", "enum": []string{"patch", "minor", "major"}, "description": "incremento semver (padrão patch)"},
 		"version":    str("versão explícita, ex. 1.4.0 (ganha de bump)"),
@@ -249,7 +249,7 @@ func mcpHint(err error) string {
 	case client.AdvicePush:
 		return "Faça git push do commit e chame create_release de novo."
 	case client.AdviceLinkRepo:
-		return "Peça ao usuário para vincular o repositório GitHub à app no painel."
+		return "Peça ao usuário para vincular o repositório (GitHub ou GitLab) à app no painel e conferir a conexão em Configurações."
 	case client.AdviceImage:
 		return "Essa app não faz deploy por imagem; não dá para criar release por aqui."
 	case client.AdviceUnreachable:

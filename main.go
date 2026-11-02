@@ -580,8 +580,14 @@ func main() {
 		_, ok, err := monitor.App(ctx, name)
 		return ok, err
 	}
-	githubRoutes(mux, gh, appExists)
+	gl, err := newGitLab(*dataDir)
+	if err != nil {
+		log.Fatalf("gitlab: %v", err)
+	}
+	githubRoutes(mux, gh)
 	manifestRoutes(mux, gh, a, "")
+	gitlabRoutes(mux, gl, a)
+	repoRoutes(mux, providers{links: gh, gh: gh, gl: gl}, appExists)
 	execRoutes(mux, a, appExists, client.Exec)
 	oauthRoutes(mux, a, uiHandler(ui))
 	mux.HandleFunc("POST /api/setup", a.setup)

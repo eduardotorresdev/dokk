@@ -189,24 +189,25 @@ func (g *github) setConfig(appID int64, slug, privateKey string) error {
 	return nil
 }
 
-func (g *github) link(app string) string {
+func (g *github) link(app string) appLink {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.links[app].Repo
+	l := g.links[app]
+	if l.Repo != "" && l.Provider == "" {
+		l.Provider = providerGitHub // vínculo antigo, sem campo
+	}
+	if l.TagFormat == "" {
+		l.TagFormat = defaultTagFormat
+	}
+	return l
 }
 
 // tagFormat do vínculo (padrão v{version}).
-func (g *github) tagFormat(app string) string {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if f := g.links[app].TagFormat; f != "" {
-		return f
-	}
-	return defaultTagFormat
-}
+func (g *github) tagFormat(app string) string { return g.link(app).TagFormat }
 
-// setLink grava o vínculo; repo vazio desfaz. format vazio = padrão.
-func (g *github) setLink(app, repo, format string) error {
+// setLink grava o vínculo; repo vazio desfaz. format vazio = padrão. O
+// provedor github fica sem campo no disco (um dokk antigo continua lendo).
+func (g *github) setLink(app, provider, repo, format string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	next := map[string]appLink{}
@@ -216,16 +217,25 @@ func (g *github) setLink(app, repo, format string) error {
 	if format == defaultTagFormat {
 		format = ""
 	}
+	if provider == providerGitHub {
+		provider = ""
+	}
 	if repo == "" {
 		delete(next, app)
 	} else {
-		next[app] = appLink{repo, format}
+		next[app] = appLink{Provider: provider, Repo: repo, TagFormat: format}
 	}
 	if err := writeJSONFile(filepath.Join(g.dir, "github-apps.json"), next); err != nil {
 		return err
 	}
 	g.links = next
 	return nil
+}
+
+// access: a App está instalada no repo (dá para pedir token).
+func (g *github) access(ctx context.Context, repo string) error {
+	_, err := g.installationToken(ctx, repo)
+	return err
 }
 
 // appJWT assina o JWT da App (vale 9 min; iat 60 s no passado por relógio torto).
@@ -369,11 +379,7 @@ func (g *github) createRelease(ctx context.Context, repo, tag, sha, image, notes
 	return rel.HTMLURL, nil
 }
 
-func githubRoutes(mux *http.ServeMux, g *github, appExists func(context.Context, string) (bool, error)) {
-	upstream := func(w http.ResponseWriter, r *http.Request, err error) {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-	}
-
+func githubRoutes(mux *http.ServeMux, g *github) {
 	mux.HandleFunc("GET /api/github", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, g.publicJSON())
 	})
@@ -412,164 +418,5 @@ func githubRoutes(mux *http.ServeMux, g *github, appExists func(context.Context,
 			return
 		}
 		writeJSON(w, http.StatusOK, g.publicJSON())
-	})
-
-	// app resolve {name} contra as apps reais do Dokku.
-	app := func(w http.ResponseWriter, r *http.Request) (string, bool) {
-		name := r.PathValue("name")
-		ok, err := appExists(r.Context(), name)
-		switch {
-		case err != nil:
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": errMsg(requestLang(r), err)})
-		case !ok:
-			writeError(w, r, http.StatusNotFound, "err.appNotFound")
-		}
-		return name, err == nil && ok
-	}
-	// ready: repo vinculado + App configurada; 400 caso contrário.
-	ready := func(w http.ResponseWriter, r *http.Request) (string, bool) {
-		name, ok := app(w, r)
-		if !ok {
-			return "", false
-		}
-		repo := g.link(name)
-		switch {
-		case repo == "":
-			writeError(w, r, http.StatusBadRequest, "err.githubNoRepo")
-			return "", false
-		case !g.configured():
-			writeError(w, r, http.StatusBadRequest, "err.githubNotConfigured")
-			return "", false
-		}
-		return repo, true
-	}
-	// installErr: 404 na instalação vira 400 "não instalada"; resto é 502.
-	installErr := func(w http.ResponseWriter, r *http.Request, err error) {
-		if ghStatus(err) == 404 {
-			writeError(w, r, http.StatusBadRequest, "err.githubNotInstalled")
-			return
-		}
-		upstream(w, r, err)
-	}
-
-	linkJSON := func(ctx context.Context, name string) map[string]any {
-		repo, format := g.link(name), g.tagFormat(name)
-		if repo == "" {
-			return map[string]any{"repo": nil, "installed": false, "tagFormat": format}
-		}
-		installed := false
-		if g.configured() {
-			_, err := g.installationToken(ctx, repo)
-			installed = err == nil
-		}
-		return map[string]any{"repo": repo, "installed": installed, "tagFormat": format}
-	}
-	mux.HandleFunc("GET /api/apps/{name}/github", func(w http.ResponseWriter, r *http.Request) {
-		name, ok := app(w, r)
-		if !ok {
-			return
-		}
-		writeJSON(w, http.StatusOK, linkJSON(r.Context(), name))
-	})
-	mux.HandleFunc("PUT /api/apps/{name}/github", func(w http.ResponseWriter, r *http.Request) {
-		name, ok := app(w, r)
-		if !ok {
-			return
-		}
-		var body struct {
-			Repo      string  `json:"repo"`
-			TagFormat *string `json:"tagFormat"`
-		}
-		json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body)
-		repo := strings.TrimSuffix(strings.TrimSpace(body.Repo), ".git")
-		repo = strings.TrimPrefix(repo, "https://github.com/")
-		if !repoRe.MatchString(repo) || strings.Contains(repo, "..") {
-			writeError(w, r, http.StatusBadRequest, "err.invalidRepo")
-			return
-		}
-		format := g.tagFormat(name)
-		if body.TagFormat != nil {
-			format = strings.TrimSpace(*body.TagFormat)
-			if format == "" {
-				format = defaultTagFormat
-			}
-		}
-		if !validTagFormat(format) {
-			writeError(w, r, http.StatusBadRequest, "err.invalidTagFormat")
-			return
-		}
-		if err := g.setLink(name, repo, format); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusOK, linkJSON(r.Context(), name))
-	})
-	mux.HandleFunc("DELETE /api/apps/{name}/github", func(w http.ResponseWriter, r *http.Request) {
-		name, ok := app(w, r)
-		if !ok {
-			return
-		}
-		if err := g.setLink(name, "", ""); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"repo": nil, "installed": false, "tagFormat": defaultTagFormat})
-	})
-
-	mux.HandleFunc("GET /api/apps/{name}/github/releases", func(w http.ResponseWriter, r *http.Request) {
-		repo, ok := ready(w, r)
-		if !ok {
-			return
-		}
-		rels, err := g.releases(r.Context(), repo, g.tagFormat(r.PathValue("name")))
-		if err != nil {
-			installErr(w, r, err)
-			return
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusOK, rels)
-	})
-	mux.HandleFunc("POST /api/apps/{name}/github/releases", func(w http.ResponseWriter, r *http.Request) {
-		repo, ok := ready(w, r)
-		if !ok {
-			return
-		}
-		var body struct {
-			Tag        string `json:"tag"`
-			SHA        string `json:"sha"`
-			Image      string `json:"image"`
-			Notes      string `json:"notes"`
-			Prerelease bool   `json:"prerelease"`
-		}
-		if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&body); err != nil {
-			writeError(w, r, http.StatusBadRequest, "err.invalidBody")
-			return
-		}
-		tag, sha, image := strings.TrimSpace(body.Tag), strings.TrimSpace(body.SHA), strings.TrimSpace(body.Image)
-		switch {
-		case !validTag(tag):
-			writeError(w, r, http.StatusBadRequest, "err.invalidTag")
-			return
-		case !matchesFormat(g.tagFormat(r.PathValue("name")), tag):
-			writeError(w, r, http.StatusBadRequest, "err.tagFormatMismatch", tag, g.tagFormat(r.PathValue("name")))
-			return
-		case !shaRe.MatchString(sha):
-			writeError(w, r, http.StatusUnprocessableEntity, "err.shaNotFound")
-			return
-		case image == "" || len(image) > imageMax || strings.ContainsAny(image, " \t\n`"):
-			writeError(w, r, http.StatusBadRequest, "err.invalidImage")
-			return
-		}
-		u, err := g.createRelease(r.Context(), repo, tag, sha, image, body.Notes, body.Prerelease)
-		switch {
-		case errors.Is(err, errTagExists):
-			writeError(w, r, http.StatusConflict, "err.tagExists", tag)
-		case errors.Is(err, errSHAUnknown):
-			writeError(w, r, http.StatusUnprocessableEntity, "err.shaNotFound")
-		case err != nil:
-			installErr(w, r, err)
-		default:
-			writeJSON(w, http.StatusOK, map[string]string{"tag": tag, "url": u})
-		}
 	})
 }
